@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { createEventDispatcher, onMount } from 'svelte';
+	import { confetti } from '@tsparticles/confetti';
+
+	export let title: string = '';
+	export let id = 0;
 	export let contents: number[][] = [
 		[0, 0, 0, 0, 0],
 		[0, 0, 0, 0, 0],
@@ -7,6 +12,7 @@
 		[0, 0, 0, 0, 0]
 	];
 	export let allowedCommands: string[] = ['f', 'l', 'r'];
+	let solved = false;
 	const squareSize: string = '70px';
 	let w: number = contents[0].length;
 	let h: number = contents.length;
@@ -55,6 +61,8 @@
 	let currentExecutingIndex: number = -1;
 	let draggedIndex: number | null = null;
 	let dragOverIndex: number | null = null;
+
+	const dispatch = createEventDispatcher();
 
 	// Movement functions based on facing direction
 	function moveForward(): void {
@@ -140,6 +148,7 @@
 
 	function resetProgram(): void {
 		hasRun = false;
+		solved = false;
 		let found: boolean = false;
 		for (let i = 0; i < h && !found; i++) {
 			for (let j = 0; j < w && !found; j++) {
@@ -183,172 +192,226 @@
 
 		currentExecutingIndex = -1;
 		isRunning = false;
+		checkWin();
 		hasRun = true;
 	}
+	function checkWin() {
+		if (player.x == goal.x && player.y == goal.y) {
+			if (!solved) {
+				solved = true;
+				// Trigger confetti effect
+				triggerConfetti();
+				// Dispatch event when level is completed for the first time
+				setTimeout(() => {
+					dispatch('levelComplete');
+				}, 500);
+			}
+		} else {
+			solved = false;
+		}
+	}
 
-	function getArrowChar(facing: number): string {
-		const arrows: string[] = ['↑', '→', '↓', '←'];
-		return arrows[facing];
+	function triggerConfetti() {
+		confetti({
+			particleCount: 150,
+			spread: 70,
+			origin: { y: 0.6 }
+		});
+
+		// Additional confetti burst after a short delay
+		setTimeout(() => {
+			confetti({
+				particleCount: 100,
+				angle: 60,
+				spread: 55,
+				origin: { x: 0 }
+			});
+		}, 200);
+
+		setTimeout(() => {
+			confetti({
+				particleCount: 100,
+				angle: 120,
+				spread: 55,
+				origin: { x: 1 }
+			});
+		}, 400);
 	}
 </script>
 
-<div class="grid-container">
-	<div class="grid" style="--gridWidth: {w}; --gridHeight: {h}; --squareSize: {squareSize};">
-		{#each Array(h) as _, row}
-			{#each Array(w) as _, col}
-				<div
-					class="gridSquare"
-					class:top-left={row === 0 && col === 0}
-					class:top-right={row === 0 && col === w - 1}
-					class:bottom-left={row === h - 1 && col === 0}
-					class:bottom-right={row === h - 1 && col === w - 1}
-					data-row={row}
-					data-col={col}
-				>
-					<!-- <p>{contents[row][col]}</p> -->
-				</div>
-			{/each}
-		{/each}
-	</div>
-	<div
-		class="marker"
-		style="--marker-x: {player.x}; --marker-y: {player.y}; --marker-color: #ff000055; transform: rotate({rotation}deg)"
-	>
-		<span class="direction-arrow">↑</span>
-	</div>
-	<div
-		class="marker"
-		style="--marker-x: {goal.x}; --marker-y: {goal.y}; --marker-color: #7e80ea55"
-	></div>
-</div>
-
-<div class="programming-interface">
-	<div class="command-blocks">
-		<div class="block-row">
-			{#if allowedCommands.includes('f')}
-				<button
-					class="command-block forward"
-					on:click={() => addCommand('forward')}
-					disabled={isRunning || hasRun}
-				>
-					Move Forward
-				</button>
-			{/if}
-			{#if allowedCommands.includes('l')}
-				<button
-					class="command-block turn-left"
-					on:click={() => addCommand('turnLeft')}
-					disabled={isRunning || hasRun}
-				>
-					Turn Left
-				</button>
-			{/if}
-			{#if allowedCommands.includes('r')}
-				<button
-					class="command-block turn-right"
-					on:click={() => addCommand('turnRight')}
-					disabled={isRunning || hasRun}
-				>
-					Turn Right
-				</button>
-			{/if}
-		</div>
-	</div>
-
-	<div class="program-area">
-		<h3>Program</h3>
-		<div
-			class="command-list"
-			on:dragover={(e) => e.preventDefault()}
-			on:drop={(e) => {
-				const rect = e.currentTarget!.getBoundingClientRect();
-				const y = e.clientY - rect.top;
-				const items = e.currentTarget!.querySelectorAll('.draggable-command');
-				let dropIndex: number = commands.length;
-
-				for (let i = 0; i < items.length; i++) {
-					const itemRect = items[i]!.getBoundingClientRect();
-					const itemY = itemRect.top - rect.top + itemRect.height / 2;
-					if (y < itemY) {
-						dropIndex = i;
-						break;
-					}
-				}
-
-				if (draggedIndex !== null) {
-					moveCommand(draggedIndex, dropIndex);
-					draggedIndex = null;
-					dragOverIndex = null;
-				}
-			}}
-		>
-			{#each commands as command, index}
-				<div
-					class="command-item draggable-command"
-					class:dragging={draggedIndex === index}
-					class:drag-over={dragOverIndex === index}
-					class:executing={currentExecutingIndex === index}
-					class:forward={command === 'forward'}
-					class:turn-left={command === 'turnLeft'}
-					class:turn-right={command === 'turnRight'}
-					draggable="true"
-					on:dragstart={(e) => handleDragStart(e, index)}
-					on:dragover={(e) => handleDragOver(e, index)}
-					on:drop={(e) => handleDrop(e, index)}
-					on:dragend={handleDragEnd}
-					on:dragleave={handleDragLeave}
-				>
-					<span class="drag-handle">⋮⋮</span>
-					<span class="command-number">{index + 1}.</span>
-					<span class="command-text">
-						{#if command === 'forward'}
-							Move Forward
-						{:else if command === 'turnLeft'}
-							Turn Left
-						{:else if command === 'turnRight'}
-							Turn Right
-						{/if}
-					</span>
-					<button
-						class="remove-btn"
-						on:click={() => removeCommand(index)}
-						disabled={isRunning || hasRun}
-						title="Remove command"
-						aria-label="Remove command"
+<div class="container" class:solved>
+	<h1 class="title">{title}</h1>
+	<div class="grid-container">
+		<div class="grid" style="--gridWidth: {w}; --gridHeight: {h}; --squareSize: {squareSize};">
+			{#each Array(h) as _, row}
+				{#each Array(w) as _, col}
+					<div
+						class="gridSquare"
+						class:top-left={row === 0 && col === 0}
+						class:top-right={row === 0 && col === w - 1}
+						class:bottom-left={row === h - 1 && col === 0}
+						class:bottom-right={row === h - 1 && col === w - 1}
+						data-row={row}
+						data-col={col}
 					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							height="12px"
-							viewBox="0 -960 960 960"
-							width="12px"
-							fill="white"
-							><path
-								d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
-							/></svg
-						>
-					</button>
-				</div>
+						<!-- <p>{contents[row][col]}</p> -->
+					</div>
+				{/each}
 			{/each}
-			{#if commands.length === 0}
-				<div class="empty-program">No commands</div>
-			{/if}
 		</div>
+		<div
+			class="marker"
+			style="--marker-x: {player.x}; --marker-y: {player.y}; --marker-color: #ff000055; transform: rotate({rotation}deg)"
+		>
+			<span class="direction-arrow">↑</span>
+		</div>
+		<div
+			class="marker"
+			style="--marker-x: {goal.x}; --marker-y: {goal.y}; --marker-color: #7e80ea55"
+		></div>
 	</div>
 
-	<div class="control-buttons">
-		{#if isRunning}
-			<button class="control-btn disabled" disabled> Running... </button>
-		{:else if hasRun}
-			<button class="control-btn reset" on:click={resetProgram}> Reset </button>
-		{:else}
-			<button class="control-btn start" on:click={runProgram} disabled={commands.length === 0}>
-				Start
-			</button>
-		{/if}
+	<div class="programming-interface">
+		<div class="command-blocks">
+			<div class="block-row">
+				{#if allowedCommands.includes('f')}
+					<button
+						class="command-block forward"
+						on:click={() => addCommand('forward')}
+						disabled={isRunning || hasRun}
+					>
+						Move Forward
+					</button>
+				{/if}
+				{#if allowedCommands.includes('l')}
+					<button
+						class="command-block turn-left"
+						on:click={() => addCommand('turnLeft')}
+						disabled={isRunning || hasRun}
+					>
+						Turn Left
+					</button>
+				{/if}
+				{#if allowedCommands.includes('r')}
+					<button
+						class="command-block turn-right"
+						on:click={() => addCommand('turnRight')}
+						disabled={isRunning || hasRun}
+					>
+						Turn Right
+					</button>
+				{/if}
+			</div>
+		</div>
+
+		<div class="program-area">
+			<h3>Program</h3>
+			<div
+				class="command-list"
+				on:dragover={(e) => e.preventDefault()}
+				on:drop={(e) => {
+					const rect = e.currentTarget!.getBoundingClientRect();
+					const y = e.clientY - rect.top;
+					const items = e.currentTarget!.querySelectorAll('.draggable-command');
+					let dropIndex: number = commands.length;
+
+					for (let i = 0; i < items.length; i++) {
+						const itemRect = items[i]!.getBoundingClientRect();
+						const itemY = itemRect.top - rect.top + itemRect.height / 2;
+						if (y < itemY) {
+							dropIndex = i;
+							break;
+						}
+					}
+
+					if (draggedIndex !== null) {
+						moveCommand(draggedIndex, dropIndex);
+						draggedIndex = null;
+						dragOverIndex = null;
+					}
+				}}
+			>
+				{#each commands as command, index}
+					<div
+						class="command-item draggable-command"
+						class:dragging={draggedIndex === index}
+						class:drag-over={dragOverIndex === index}
+						class:executing={currentExecutingIndex === index}
+						class:forward={command === 'forward'}
+						class:turn-left={command === 'turnLeft'}
+						class:turn-right={command === 'turnRight'}
+						draggable="true"
+						on:dragstart={(e) => handleDragStart(e, index)}
+						on:dragover={(e) => handleDragOver(e, index)}
+						on:drop={(e) => handleDrop(e, index)}
+						on:dragend={handleDragEnd}
+						on:dragleave={handleDragLeave}
+					>
+						<span class="drag-handle">⋮⋮</span>
+						<span class="command-number">{index + 1}.</span>
+						<span class="command-text">
+							{#if command === 'forward'}
+								Move Forward
+							{:else if command === 'turnLeft'}
+								Turn Left
+							{:else if command === 'turnRight'}
+								Turn Right
+							{/if}
+						</span>
+						<button
+							class="remove-btn"
+							on:click={() => removeCommand(index)}
+							disabled={isRunning || hasRun}
+							title="Remove command"
+							aria-label="Remove command"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								height="12px"
+								viewBox="0 -960 960 960"
+								width="12px"
+								fill="white"
+								><path
+									d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
+								/></svg
+							>
+						</button>
+					</div>
+				{/each}
+				{#if commands.length === 0}
+					<div class="empty-program">No commands</div>
+				{/if}
+			</div>
+		</div>
+
+		<div class="control-buttons">
+			{#if isRunning}
+				<button class="control-btn disabled" disabled> Running... </button>
+			{:else if hasRun}
+				<button class="control-btn reset" on:click={resetProgram}> Reset </button>
+			{:else}
+				<button class="control-btn start" on:click={runProgram} disabled={commands.length === 0}>
+					Start
+				</button>
+			{/if}
+		</div>
 	</div>
 </div>
 
 <style>
+	.container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 20px;
+		padding: 20px;
+		background-color: #def1f4;
+		border-radius: 25px;
+		transition: background-color 0.3s ease;
+	}
+	.container.solved {
+		background-color: #c1f2b3;
+	}
 	.grid-container {
 		position: relative;
 		display: inline-block;
@@ -418,8 +481,9 @@
 		margin-top: 20px;
 		display: flex;
 		flex-direction: column;
+		justify-content: center;
 		gap: 20px;
-		max-width: 600px;
+		width: 600px;
 	}
 
 	.program-area h3 {
@@ -429,6 +493,7 @@
 
 	.block-row {
 		display: flex;
+		justify-content: center;
 		gap: 10px;
 		flex-wrap: wrap;
 	}
