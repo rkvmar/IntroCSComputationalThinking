@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
 
-	let maxUnlockedLevel = 0;
+	let maxUnlockedLevel = 4;
 	let completedLevels: boolean[] = [];
 	let levelElements: HTMLElement[] = [];
 	let congratulationsElement: HTMLElement;
@@ -30,6 +30,41 @@
 				[0, 0, 1, 0, 0]
 			],
 			allowedCommands: ['f', 'r']
+		},
+		{
+			title: 'no way 3',
+			contents: [
+				[0, 0, 0, 0, 0],
+				[0, 0, 2, 0, 0],
+				[0, 0, 0, 0, 0],
+				[0, 0, 3, 0, 0],
+				[0, 0, 1, 0, 0]
+			],
+			allowedCommands: ['f', 'r', 'l']
+		},
+		{
+			title: 'no way 4',
+			contents: [
+				[0, 0, 0, 0, 0],
+				[0, 0, 2, 0, 0],
+				[0, 0, 0, 0, 0],
+				[0, 0, 0, 0, 0],
+				[0, 0, 1, 0, 0]
+			],
+			allowedCommands: ['f', 'r', 'l', 'loop'],
+			maxBlocks: 2
+		},
+		{
+			title: 'no way 5',
+			contents: [
+				[0, 0, 0, 0, 0],
+				[0, 3, 3, 3, 3],
+				[0, 3, 3, 0, 2],
+				[0, 3, 0, 0, 3],
+				[0, 3, 1, 3, 3]
+			],
+			allowedCommands: ['f', 'r', 'l', 'loop'],
+			maxBlocks: 5
 		}
 	];
 
@@ -125,6 +160,7 @@
 					id={index}
 					contents={level.contents}
 					allowedCommands={level.allowedCommands}
+					maxBlocks={level.maxBlocks}
 					on:levelComplete={() => handleLevelComplete(index)}
 				/>
 			</div>
@@ -133,7 +169,7 @@
 
 	{#if completedLevels.every((completed) => completed)}
 		<div class="congratulations" bind:this={congratulationsElement}>
-			<h1>Congratulatis!</h1>
+			<h1>Congradulatis!</h1>
 		</div>
 	{/if}
 </div>

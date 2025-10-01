@@ -12,6 +12,7 @@
 		[0, 0, 0, 0, 0]
 	];
 	export let allowedCommands: string[] = ['f', 'l', 'r'];
+	export let maxBlocks: number | null = null;
 	let solved = false;
 	const squareSize: string = '70px';
 	let w: number = contents[0].length;
@@ -54,13 +55,44 @@
 	}
 
 	// Programming blocks
-	type Command = 'forward' | 'turnLeft' | 'turnRight';
-	let commands: Command[] = [];
+	type Command = 'forward' | 'turnLeft' | 'turnRight' | 'loop';
+	interface LoopCommand {
+		type: 'loop';
+		times: number;
+		commands: ProgramCommand[];
+	}
+	type ProgramCommand = Command | LoopCommand;
+	let commands: ProgramCommand[] = [];
 	let isRunning: boolean = false;
 	let hasRun: boolean = false;
 	let currentExecutingIndex: number = -1;
+	let currentExecutingPath: number[] = [];
 	let draggedIndex: number | null = null;
 	let dragOverIndex: number | null = null;
+	let draggedFromLoop: number | null = null;
+	let draggedLoopCommandIndex: number | null = null;
+	let showLoopDialog: boolean = false;
+	let loopTimes: number = 2;
+	let editingLoopIndex: number | null = null;
+
+	// Calculate total blocks used
+	$: totalBlocksUsed = calculateTotalBlocks(commands);
+
+	function calculateTotalBlocks(commandList: ProgramCommand[]): number {
+		let count = 0;
+		for (const command of commandList) {
+			if (typeof command === 'string') {
+				count++;
+			} else if (command.type === 'loop') {
+				count++; // Loop block itself counts as 1
+				count += command.commands.length; // Add commands inside loop
+			}
+		}
+		return count;
+	}
+
+	$: blocksRemaining = maxBlocks && maxBlocks > 0 ? maxBlocks - totalBlocksUsed : null;
+	$: isAtBlockLimit = maxBlocks !== null && maxBlocks > 0 && totalBlocksUsed >= maxBlocks;
 
 	const dispatch = createEventDispatcher();
 
@@ -84,8 +116,12 @@
 				break;
 		}
 
-		player.x = newX;
-		player.y = newY;
+		// Check if the target position is a wall (value 3) or out of bounds
+		if (newX >= 0 && newX < w && newY >= 0 && newY < h && contents[newY][newX] !== 3) {
+			player.x = newX;
+			player.y = newY;
+		}
+		// If it's a wall or out of bounds, don't move
 	}
 
 	function turnLeft(): void {
@@ -98,8 +134,50 @@
 		rotation += 90;
 	}
 
-	function addCommand(command: Command): void {
-		commands = [...commands, command];
+	function addCommand(command: Command | 'loop'): void {
+		if (isAtBlockLimit) return;
+
+		if (command === 'loop') {
+			showLoopDialog = true;
+		} else {
+			commands = [...commands, command];
+		}
+	}
+
+	function addLoop(): void {
+		if (editingLoopIndex !== null) {
+			// Editing existing loop
+			const newCommands = [...commands];
+			const loop = newCommands[editingLoopIndex] as LoopCommand;
+			loop.times = loopTimes;
+			commands = newCommands;
+			editingLoopIndex = null;
+		} else {
+			// Creating new loop
+			if (isAtBlockLimit) return;
+			const newLoop: LoopCommand = {
+				type: 'loop',
+				times: loopTimes,
+				commands: []
+			};
+			commands = [...commands, newLoop];
+		}
+		showLoopDialog = false;
+		loopTimes = 2;
+	}
+
+	function editLoop(index: number): void {
+		const loop = commands[index] as LoopCommand;
+		loopTimes = loop.times;
+		editingLoopIndex = index;
+		showLoopDialog = true;
+	}
+
+	function removeCommandFromLoop(loopIndex: number, commandIndex: number): void {
+		const newCommands = [...commands];
+		const loop = newCommands[loopIndex] as LoopCommand;
+		loop.commands = loop.commands.filter((_, i) => i !== commandIndex);
+		commands = newCommands;
 	}
 
 	function removeCommand(index: number): void {
@@ -107,14 +185,21 @@
 	}
 
 	function moveCommand(fromIndex: number, toIndex: number): void {
-		const newCommands: Command[] = [...commands];
+		const newCommands: ProgramCommand[] = [...commands];
 		const [movedItem] = newCommands.splice(fromIndex, 1);
 		newCommands.splice(toIndex, 0, movedItem);
 		commands = newCommands;
 	}
 
-	function handleDragStart(event: DragEvent, index: number): void {
+	function handleDragStart(
+		event: DragEvent,
+		index: number,
+		fromLoop?: number,
+		loopCommandIndex?: number
+	): void {
 		draggedIndex = index;
+		draggedFromLoop = fromLoop ?? null;
+		draggedLoopCommandIndex = loopCommandIndex ?? null;
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'move';
 		}
@@ -128,22 +213,94 @@
 		dragOverIndex = index;
 	}
 
-	function handleDrop(event: DragEvent, index: number): void {
+	function handleDrop(event: DragEvent, index: number, toLoop?: number): void {
 		event.preventDefault();
-		if (draggedIndex !== null && draggedIndex !== index) {
-			moveCommand(draggedIndex, index);
+
+		if (draggedIndex !== null) {
+			// Handle different drag scenarios
+			if (draggedFromLoop !== null && draggedLoopCommandIndex !== null) {
+				// Dragging from inside a loop
+				if (toLoop !== undefined) {
+					// Moving from one loop to another loop
+					moveCommandBetweenLoops(draggedFromLoop, draggedLoopCommandIndex, toLoop);
+				} else {
+					// Moving from loop to main program
+					moveCommandFromLoopToMain(draggedFromLoop, draggedLoopCommandIndex, index);
+				}
+			} else if (toLoop !== undefined) {
+				// Moving from main program to a loop
+				moveCommandFromMainToLoop(draggedIndex, toLoop);
+			} else if (draggedIndex !== index) {
+				// Normal move within main program
+				moveCommand(draggedIndex, index);
+			}
 		}
-		draggedIndex = null;
-		dragOverIndex = null;
+
+		clearDragState();
 	}
 
 	function handleDragEnd(): void {
-		draggedIndex = null;
-		dragOverIndex = null;
+		clearDragState();
 	}
 
 	function handleDragLeave(): void {
 		dragOverIndex = null;
+	}
+
+	function clearDragState(): void {
+		draggedIndex = null;
+		dragOverIndex = null;
+		draggedFromLoop = null;
+		draggedLoopCommandIndex = null;
+	}
+
+	function moveCommandFromLoopToMain(
+		fromLoopIndex: number,
+		commandIndex: number,
+		toIndex: number
+	): void {
+		const newCommands = [...commands];
+		const fromLoop = newCommands[fromLoopIndex] as LoopCommand;
+		const [movedCommand] = fromLoop.commands.splice(commandIndex, 1);
+
+		// Insert into main program
+		newCommands.splice(toIndex, 0, movedCommand);
+		commands = newCommands;
+	}
+
+	function moveCommandFromMainToLoop(fromIndex: number, toLoopIndex: number): void {
+		const newCommands = [...commands];
+		const [movedCommand] = newCommands.splice(fromIndex, 1) as Command[];
+
+		// Adjust loop index if necessary
+		const adjustedLoopIndex = fromIndex < toLoopIndex ? toLoopIndex - 1 : toLoopIndex;
+		const toLoop = newCommands[adjustedLoopIndex] as LoopCommand;
+		toLoop.commands.push(movedCommand);
+
+		commands = newCommands;
+	}
+
+	function moveCommandBetweenLoops(
+		fromLoopIndex: number,
+		commandIndex: number,
+		toLoopIndex: number
+	): void {
+		const newCommands = [...commands];
+		const fromLoop = newCommands[fromLoopIndex] as LoopCommand;
+		const toLoop = newCommands[toLoopIndex] as LoopCommand;
+
+		const [movedCommand] = fromLoop.commands.splice(commandIndex, 1);
+		toLoop.commands.push(movedCommand);
+
+		commands = newCommands;
+	}
+
+	function moveCommandWithinLoop(loopIndex: number, fromIndex: number, toIndex: number): void {
+		const newCommands = [...commands];
+		const loop = newCommands[loopIndex] as LoopCommand;
+		const [movedCommand] = loop.commands.splice(fromIndex, 1);
+		loop.commands.splice(toIndex, 0, movedCommand);
+		commands = newCommands;
 	}
 
 	function resetProgram(): void {
@@ -171,29 +328,41 @@
 		if (isRunning || commands.length === 0) return;
 
 		isRunning = true;
-
-		for (let i = 0; i < commands.length; i++) {
-			currentExecutingIndex = i;
-
-			switch (commands[i]) {
-				case 'forward':
-					moveForward();
-					break;
-				case 'turnLeft':
-					turnLeft();
-					break;
-				case 'turnRight':
-					turnRight();
-					break;
-			}
-
-			await new Promise((resolve) => setTimeout(resolve, 500));
-		}
-
+		await executeCommands(commands, []);
 		currentExecutingIndex = -1;
+		currentExecutingPath = [];
 		isRunning = false;
 		checkWin();
 		hasRun = true;
+	}
+
+	async function executeCommands(commandList: ProgramCommand[], path: number[]): Promise<void> {
+		for (let i = 0; i < commandList.length; i++) {
+			const currentPath = [...path, i];
+			currentExecutingIndex = i;
+			currentExecutingPath = currentPath;
+
+			const command = commandList[i];
+
+			if (typeof command === 'string') {
+				switch (command) {
+					case 'forward':
+						moveForward();
+						break;
+					case 'turnLeft':
+						turnLeft();
+						break;
+					case 'turnRight':
+						turnRight();
+						break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 500));
+			} else if (command.type === 'loop') {
+				for (let loopIteration = 0; loopIteration < command.times; loopIteration++) {
+					await executeCommands(command.commands, currentPath);
+				}
+			}
+		}
 	}
 	function checkWin() {
 		if (player.x == goal.x && player.y == goal.y) {
@@ -241,12 +410,24 @@
 
 <div class="container" class:solved>
 	<h1 class="title">{title}</h1>
+	{#if maxBlocks !== null && maxBlocks > 0}
+		<div class="block-counter" class:at-limit={isAtBlockLimit}>
+			<span class="counter-label">Blocks:</span>
+			<span class="counter-value">{totalBlocksUsed}/{maxBlocks}</span>
+			{#if blocksRemaining !== null && blocksRemaining > 0}
+				<span class="remaining">({blocksRemaining} left)</span>
+			{:else if isAtBlockLimit}
+				<span class="limit-reached">Limit reached!</span>
+			{/if}
+		</div>
+	{/if}
 	<div class="grid-container">
 		<div class="grid" style="--gridWidth: {w}; --gridHeight: {h}; --squareSize: {squareSize};">
 			{#each Array(h) as _, row}
 				{#each Array(w) as _, col}
 					<div
 						class="gridSquare"
+						class:wall={contents[row][col] === 3}
 						class:top-left={row === 0 && col === 0}
 						class:top-right={row === 0 && col === w - 1}
 						class:bottom-left={row === h - 1 && col === 0}
@@ -278,7 +459,7 @@
 					<button
 						class="command-block forward"
 						on:click={() => addCommand('forward')}
-						disabled={isRunning || hasRun}
+						disabled={isRunning || hasRun || isAtBlockLimit}
 					>
 						Move Forward
 					</button>
@@ -287,7 +468,7 @@
 					<button
 						class="command-block turn-left"
 						on:click={() => addCommand('turnLeft')}
-						disabled={isRunning || hasRun}
+						disabled={isRunning || hasRun || isAtBlockLimit}
 					>
 						Turn Left
 					</button>
@@ -296,9 +477,18 @@
 					<button
 						class="command-block turn-right"
 						on:click={() => addCommand('turnRight')}
-						disabled={isRunning || hasRun}
+						disabled={isRunning || hasRun || isAtBlockLimit}
 					>
 						Turn Right
+					</button>
+				{/if}
+				{#if allowedCommands.includes('loop')}
+					<button
+						class="command-block loop"
+						on:click={() => addCommand('loop')}
+						disabled={isRunning || hasRun || isAtBlockLimit}
+					>
+						Add Loop
 					</button>
 				{/if}
 			</div>
@@ -324,65 +514,226 @@
 						}
 					}
 
-					if (draggedIndex !== null) {
-						moveCommand(draggedIndex, dropIndex);
-						draggedIndex = null;
-						dragOverIndex = null;
-					}
+					handleDrop(e, dropIndex);
 				}}
 			>
 				{#each commands as command, index}
-					<div
-						class="command-item draggable-command"
-						class:dragging={draggedIndex === index}
-						class:drag-over={dragOverIndex === index}
-						class:executing={currentExecutingIndex === index}
-						class:forward={command === 'forward'}
-						class:turn-left={command === 'turnLeft'}
-						class:turn-right={command === 'turnRight'}
-						draggable="true"
-						on:dragstart={(e) => handleDragStart(e, index)}
-						on:dragover={(e) => handleDragOver(e, index)}
-						on:drop={(e) => handleDrop(e, index)}
-						on:dragend={handleDragEnd}
-						on:dragleave={handleDragLeave}
-					>
-						<span class="drag-handle">⋮⋮</span>
-						<span class="command-number">{index + 1}.</span>
-						<span class="command-text">
-							{#if command === 'forward'}
-								Move Forward
-							{:else if command === 'turnLeft'}
-								Turn Left
-							{:else if command === 'turnRight'}
-								Turn Right
-							{/if}
-						</span>
-						<button
-							class="remove-btn"
-							on:click={() => removeCommand(index)}
-							disabled={isRunning || hasRun}
-							title="Remove command"
-							aria-label="Remove command"
+					{#if typeof command === 'string'}
+						<div
+							class="command-item draggable-command"
+							class:dragging={draggedIndex === index}
+							class:drag-over={dragOverIndex === index}
+							class:executing={currentExecutingIndex === index && currentExecutingPath.length === 1}
+							class:forward={command === 'forward'}
+							class:turn-left={command === 'turnLeft'}
+							class:turn-right={command === 'turnRight'}
+							draggable="true"
+							on:dragstart={(e) => handleDragStart(e, index)}
+							on:dragover={(e) => handleDragOver(e, index)}
+							on:drop={(e) => handleDrop(e, index)}
+							on:dragend={handleDragEnd}
+							on:dragleave={handleDragLeave}
 						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								height="12px"
-								viewBox="0 -960 960 960"
-								width="12px"
-								fill="white"
-								><path
-									d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
-								/></svg
+							<span class="drag-handle">⋮⋮</span>
+							<span class="command-number">{index + 1}.</span>
+							<span class="command-text">
+								{#if command === 'forward'}
+									Move Forward
+								{:else if command === 'turnLeft'}
+									Turn Left
+								{:else if command === 'turnRight'}
+									Turn Right
+								{/if}
+							</span>
+							<button
+								class="remove-btn"
+								on:click={() => removeCommand(index)}
+								disabled={isRunning || hasRun}
+								title="Remove command"
+								aria-label="Remove command"
 							>
-						</button>
-					</div>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									height="12px"
+									viewBox="0 -960 960 960"
+									width="12px"
+									fill="white"
+									><path
+										d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
+									/></svg
+								>
+							</button>
+						</div>
+					{:else if command.type === 'loop'}
+						<div
+							class="loop-container draggable-command"
+							class:dragging={draggedIndex === index}
+							class:drag-over={dragOverIndex === index}
+							class:executing={currentExecutingIndex === index && currentExecutingPath.length === 1}
+							draggable="true"
+							on:dragstart={(e) => handleDragStart(e, index)}
+							on:dragover={(e) => handleDragOver(e, index)}
+							on:drop={(e) => handleDrop(e, index)}
+							on:dragend={handleDragEnd}
+							on:dragleave={handleDragLeave}
+						>
+							<div class="loop-header">
+								<span class="drag-handle">⋮⋮</span>
+								<span class="command-number">{index + 1}.</span>
+								<button
+									class="loop-text-btn"
+									on:click={() => editLoop(index)}
+									disabled={isRunning || hasRun}
+									title="Edit loop count"
+									aria-label="Edit loop count"
+								>
+									Repeat {command.times} times:
+								</button>
+								<button
+									class="remove-btn"
+									on:click={() => removeCommand(index)}
+									disabled={isRunning || hasRun}
+									title="Remove loop"
+									aria-label="Remove loop"
+								>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										height="12px"
+										viewBox="0 -960 960 960"
+										width="12px"
+										fill="white"
+										><path
+											d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
+										/></svg
+									>
+								</button>
+							</div>
+							<div class="loop-commands">
+								<div
+									class="loop-drop-zone"
+									on:dragover={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+									}}
+									on:drop={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										handleDrop(e, 0, index);
+									}}
+								>
+									{#if command.commands.length === 0}
+										<div class="drop-zone-text">Drop commands here</div>
+									{/if}
+									{#each command.commands as loopCommand, loopIndex}
+										<div
+											class="command-item loop-command draggable-command"
+											class:executing={currentExecutingPath[0] === index &&
+												currentExecutingPath[1] === loopIndex}
+											class:forward={loopCommand === 'forward'}
+											class:turn-left={loopCommand === 'turnLeft'}
+											class:turn-right={loopCommand === 'turnRight'}
+											class:dragging={draggedFromLoop === index &&
+												draggedLoopCommandIndex === loopIndex}
+											draggable="true"
+											on:dragstart={(e) => {
+												e.stopPropagation();
+												handleDragStart(e, index, index, loopIndex);
+											}}
+											on:dragover={(e) => {
+												e.preventDefault();
+												e.stopPropagation();
+											}}
+											on:drop={(e) => {
+												e.preventDefault();
+												e.stopPropagation();
+												if (
+													draggedFromLoop === index &&
+													draggedLoopCommandIndex !== null &&
+													draggedLoopCommandIndex !== loopIndex
+												) {
+													moveCommandWithinLoop(index, draggedLoopCommandIndex, loopIndex);
+												} else if (draggedFromLoop !== index || draggedIndex !== null) {
+													// Handle moving to this position in the loop
+													if (draggedFromLoop !== null && draggedLoopCommandIndex !== null) {
+														moveCommandBetweenLoops(
+															draggedFromLoop,
+															draggedLoopCommandIndex,
+															index
+														);
+													} else if (draggedIndex !== null) {
+														moveCommandFromMainToLoop(draggedIndex, index);
+													}
+												}
+												clearDragState();
+											}}
+											on:dragend={(e) => {
+												e.stopPropagation();
+												handleDragEnd();
+											}}
+										>
+											<span class="drag-handle">⋮⋮</span>
+											<span class="command-number">{loopIndex + 1}.</span>
+											<span class="command-text">
+												{#if loopCommand === 'forward'}
+													Move Forward
+												{:else if loopCommand === 'turnLeft'}
+													Turn Left
+												{:else if loopCommand === 'turnRight'}
+													Turn Right
+												{/if}
+											</span>
+											<button
+												class="remove-btn"
+												on:click={() => removeCommandFromLoop(index, loopIndex)}
+												disabled={isRunning || hasRun}
+												title="Remove command"
+												aria-label="Remove command"
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													height="12px"
+													viewBox="0 -960 960 960"
+													width="12px"
+													fill="white"
+													><path
+														d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"
+													/></svg
+												>
+											</button>
+										</div>
+									{/each}
+								</div>
+							</div>
+						</div>
+					{/if}
 				{/each}
 				{#if commands.length === 0}
 					<div class="empty-program">No commands</div>
 				{/if}
 			</div>
 		</div>
+
+		{#if showLoopDialog}
+			<div class="modal-overlay" on:click={() => (showLoopDialog = false)}>
+				<div class="modal" on:click|stopPropagation>
+					<h3>{editingLoopIndex !== null ? 'Edit Loop' : 'Create Loop'}</h3>
+					<p>How many times should this loop repeat?</p>
+					<input type="number" bind:value={loopTimes} min="1" max="10" class="loop-input" />
+					<div class="modal-buttons">
+						<button
+							class="modal-btn cancel"
+							on:click={() => {
+								showLoopDialog = false;
+								editingLoopIndex = null;
+							}}>Cancel</button
+						>
+						<button class="modal-btn confirm" on:click={addLoop}>
+							{editingLoopIndex !== null ? 'Update Loop' : 'Create Loop'}
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<div class="control-buttons">
 			{#if isRunning}
@@ -412,6 +763,43 @@
 	.container.solved {
 		background-color: #c1f2b3;
 	}
+
+	.block-counter {
+		background-color: rgba(255, 255, 255, 0.8);
+		border: 2px solid #4caf50;
+		border-radius: 12px;
+		padding: 8px 16px;
+		font-weight: bold;
+		color: #2e7d32;
+		margin-bottom: 10px;
+		transition: all 0.3s ease;
+	}
+
+	.block-counter.at-limit {
+		border-color: #f44336;
+		background-color: #ffebee;
+		color: #c62828;
+	}
+
+	.counter-label {
+		margin-right: 4px;
+	}
+
+	.counter-value {
+		font-size: 1.1em;
+		margin-right: 8px;
+	}
+
+	.remaining {
+		color: #666;
+		font-size: 0.9em;
+	}
+
+	.limit-reached {
+		color: #c62828;
+		font-size: 0.9em;
+		font-weight: bold;
+	}
 	.grid-container {
 		position: relative;
 		display: inline-block;
@@ -434,6 +822,33 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+
+	.gridSquare.wall {
+		background-color: #333333;
+		border-color: #222222;
+		position: relative;
+	}
+
+	.gridSquare.wall::before {
+		content: '';
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		right: 2px;
+		bottom: 2px;
+		background:
+			linear-gradient(45deg, #444 25%, transparent 25%),
+			linear-gradient(-45deg, #444 25%, transparent 25%),
+			linear-gradient(45deg, transparent 75%, #444 75%),
+			linear-gradient(-45deg, transparent 75%, #444 75%);
+		background-size: 8px 8px;
+		background-position:
+			0 0,
+			0 4px,
+			4px -4px,
+			-4px 0px;
+		border-radius: 2px;
 	}
 
 	.gridSquare.top-left {
@@ -541,6 +956,16 @@
 
 	.command-block.turn-right:hover:not(:disabled) {
 		background-color: #f57c00;
+	}
+
+	.command-block.loop {
+		background-color: #9c27b0;
+		border-color: #7b1fa2;
+		color: white;
+	}
+
+	.command-block.loop:hover:not(:disabled) {
+		background-color: #7b1fa2;
 	}
 
 	.program-area {
@@ -659,6 +1084,169 @@
 	.remove-btn:disabled {
 		background: #ccc;
 		cursor: not-allowed;
+	}
+
+	.loop-container {
+		border: 2px solid #9c27b0;
+		border-radius: 8px;
+		margin: 5px 0;
+		background: #f3e5f5;
+		overflow: hidden;
+	}
+
+	.loop-container.executing {
+		border-color: #ffc107;
+		background-color: #fff8e1;
+		box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+	}
+
+	.loop-header {
+		padding: 10px;
+		background: #e1bee7;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-weight: 600;
+		color: #4a148c;
+	}
+
+	.loop-text-btn {
+		flex: 1;
+		background: none;
+		border: none;
+		text-align: left;
+		font-weight: 600;
+		color: #4a148c;
+		cursor: pointer;
+		padding: 2px 4px;
+		border-radius: 3px;
+		transition: background-color 0.2s ease;
+	}
+
+	.loop-text-btn:hover:not(:disabled) {
+		background-color: rgba(255, 255, 255, 0.3);
+	}
+
+	.loop-text-btn:disabled {
+		cursor: not-allowed;
+		opacity: 0.7;
+	}
+
+	.loop-commands {
+		padding: 10px;
+		background: white;
+	}
+
+	.loop-command {
+		padding: 8px;
+		margin: 3px 0;
+		border: 1px solid #e0e0e0;
+		border-radius: 4px;
+		font-size: 0.9em;
+		cursor: move;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		transition: all 0.2s ease;
+	}
+
+	.loop-command.forward:hover {
+		border-color: #388e3c;
+	}
+
+	.loop-command.turn-left:hover {
+		border-color: #1565c0;
+	}
+
+	.loop-command.turn-right:hover {
+		border-color: #e65100;
+	}
+
+	.loop-command.dragging {
+		opacity: 0.5;
+	}
+
+	.loop-drop-zone {
+		margin-top: 8px;
+		padding: 12px;
+		border: 2px dashed #9c27b0;
+		border-radius: 6px;
+		min-height: 40px;
+		background-color: #fafafa;
+		text-align: left;
+	}
+
+	.drop-zone-text {
+		font-size: 0.9em;
+		color: #9c27b0;
+		font-style: italic;
+		font-weight: 500;
+	}
+
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+	}
+
+	.modal {
+		background: white;
+		border-radius: 8px;
+		padding: 20px;
+		min-width: 300px;
+		text-align: center;
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+	}
+
+	.modal h3 {
+		margin: 0 0 10px 0;
+		color: #333;
+	}
+
+	.modal p {
+		margin: 0 0 15px 0;
+		color: #666;
+	}
+
+	.loop-input {
+		width: 60px;
+		padding: 8px;
+		border: 2px solid #ddd;
+		border-radius: 4px;
+		text-align: center;
+		font-size: 16px;
+		margin-bottom: 20px;
+	}
+
+	.modal-buttons {
+		display: flex;
+		gap: 10px;
+		justify-content: center;
+	}
+
+	.modal-btn {
+		padding: 10px 20px;
+		border: none;
+		border-radius: 4px;
+		font-weight: bold;
+		cursor: pointer;
+	}
+
+	.modal-btn.cancel {
+		background: #f44336;
+		color: white;
+	}
+
+	.modal-btn.confirm {
+		background: #4caf50;
+		color: white;
 	}
 
 	.empty-program {
