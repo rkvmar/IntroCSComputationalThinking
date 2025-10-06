@@ -3,12 +3,35 @@
 	import { onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
 
-	let maxUnlockedLevel = 4;
+	interface Door {
+		type: 'door';
+		id: string;
+		defaultCode: { condition: string; ifCommands: string[]; elseCommands: string[] };
+		currentCode?: { condition: string; ifCommands: string[]; elseCommands: string[] };
+		editable: boolean;
+		isOpen?: boolean;
+	}
+
+	interface Key {
+		type: 'key';
+		id: string;
+		collected: boolean;
+	}
+
+	interface Level {
+		title: string;
+		contents: (number | Door | Key)[][];
+		allowedCommands: string[];
+		maxBlocks?: number;
+	}
+
+	let maxUnlockedLevel: number = 6;
 	let completedLevels: boolean[] = [];
 	let levelElements: HTMLElement[] = [];
 	let congratulationsElement: HTMLElement;
 
-	const levels = [
+	/// Define Levels
+	const levels: Level[] = [
 		{
 			title: 'no way',
 			contents: [
@@ -57,22 +80,54 @@
 		{
 			title: 'no way 5',
 			contents: [
-				[0, 0, 0, 0, 0],
-				[0, 3, 3, 3, 3],
-				[0, 3, 3, 0, 2],
-				[0, 3, 0, 0, 3],
-				[0, 3, 1, 3, 3]
+				[3, 0, 2],
+				[0, 0, 3],
+				[1, 3, 3]
 			],
 			allowedCommands: ['f', 'r', 'l', 'loop'],
 			maxBlocks: 5
+		},
+		{
+			title: 'Door™',
+			contents: [
+				[0, 0, 0, 0, 0],
+				[0, 0, 2, 0, 0],
+				[
+					0,
+					0,
+					{
+						type: 'door',
+						id: 'smartDoor',
+						defaultCode: { condition: 'has key', ifCommands: ['open'], elseCommands: ['close'] },
+						editable: false,
+						isOpen: false
+					} as Door,
+					0,
+					0
+				],
+				[
+					0,
+					0,
+					{
+						type: 'key',
+						id: 'key1',
+						collected: false
+					} as Key,
+					0,
+					0
+				],
+				[0, 0, 1, 0, 0]
+			],
+			allowedCommands: ['f', 'r', 'l'],
+			maxBlocks: 3
 		}
 	];
 
-	onMount(() => {
+	onMount((): void => {
 		completedLevels = new Array(levels.length).fill(false);
 	});
 
-	function handleLevelComplete(levelIndex: number) {
+	function handleLevelComplete(levelIndex: number): void {
 		if (!completedLevels[levelIndex]) {
 			completedLevels[levelIndex] = true;
 
@@ -112,7 +167,7 @@
 		}
 	}
 
-	function triggerFinalConfetti() {
+	function triggerFinalConfetti(): void {
 		// Epic confetti for completing all levels
 		confetti({
 			particleCount: 300,

@@ -2,9 +2,24 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
 
+	interface Door {
+		type: 'door';
+		id: string;
+		defaultCode: { condition: string; ifCommands: string[]; elseCommands: string[] };
+		currentCode?: { condition: string; ifCommands: string[]; elseCommands: string[] };
+		editable: boolean;
+		isOpen?: boolean;
+	}
+
+	interface Key {
+		type: 'key';
+		id: string;
+		collected: boolean;
+	}
+
 	export let title: string = '';
-	export let id = 0;
-	export let contents: number[][] = [
+	export let id: number = 0;
+	export let contents: (number | Door | Key)[][] = [
 		[0, 0, 0, 0, 0],
 		[0, 0, 0, 0, 0],
 		[0, 0, 0, 0, 0],
@@ -13,7 +28,7 @@
 	];
 	export let allowedCommands: string[] = ['f', 'l', 'r'];
 	export let maxBlocks: number | null = null;
-	let solved = false;
+	let solved: boolean = false;
 	const squareSize: string = '70px';
 	let w: number = contents[0].length;
 	let h: number = contents.length;
@@ -21,6 +36,7 @@
 		x: number;
 		y: number;
 		facing: number;
+
 		constructor(x: number, y: number, facing: number) {
 			this.x = x;
 			this.y = y;
@@ -33,9 +49,11 @@
 	let goal: Marker = new Marker(1, 1, 0);
 	let rotation: number = 0;
 	let found: boolean = false;
+	let collectedKeys: Set<string> = new Set();
 	for (let i = 0; i < h && !found; i++) {
 		for (let j = 0; j < w && !found; j++) {
-			if (contents[i][j] == 1) {
+			const cell = contents[i][j];
+			if (cell == 1) {
 				player.x = j;
 				player.y = i;
 				found = true;
@@ -46,7 +64,8 @@
 	// FIND GOAL
 	for (let i = 0; i < h && !found; i++) {
 		for (let j = 0; j < w && !found; j++) {
-			if (contents[i][j] == 2) {
+			const cell = contents[i][j];
+			if (cell == 2) {
 				goal.x = j;
 				goal.y = i;
 				found = true;
@@ -56,12 +75,15 @@
 
 	// Programming blocks
 	type Command = 'forward' | 'turnLeft' | 'turnRight' | 'loop';
+
 	interface LoopCommand {
 		type: 'loop';
 		times: number;
 		commands: ProgramCommand[];
 	}
+
 	type ProgramCommand = Command | LoopCommand;
+
 	let commands: ProgramCommand[] = [];
 	let isRunning: boolean = false;
 	let hasRun: boolean = false;
@@ -76,6 +98,7 @@
 	let editingLoopIndex: number | null = null;
 
 	// Calculate total blocks used
+	let totalBlocksUsed: number;
 	$: totalBlocksUsed = calculateTotalBlocks(commands);
 
 	function calculateTotalBlocks(commandList: ProgramCommand[]): number {
@@ -91,6 +114,9 @@
 		return count;
 	}
 
+	// Declare variables for reactive statements
+	let blocksRemaining: number | null;
+	let isAtBlockLimit: boolean;
 	$: blocksRemaining = maxBlocks && maxBlocks > 0 ? maxBlocks - totalBlocksUsed : null;
 	$: isAtBlockLimit = maxBlocks !== null && maxBlocks > 0 && totalBlocksUsed >= maxBlocks;
 
@@ -116,12 +142,40 @@
 				break;
 		}
 
-		// Check if the target position is a wall (value 3) or out of bounds
-		if (newX >= 0 && newX < w && newY >= 0 && newY < h && contents[newY][newX] !== 3) {
+		// Check if the target position is valid
+		if (newX >= 0 && newX < w && newY >= 0 && newY < h) {
+			const targetCell = contents[newY][newX];
+
+			// Check if it's a wall
+			if (targetCell === 3) {
+				return; // Can't move through walls
+			}
+
+			// Check if it's a door
+			if (typeof targetCell === 'object' && targetCell.type === 'door') {
+				// Execute door logic to see if it should open
+				const shouldOpen = executeDoorLogic(targetCell);
+				if (!shouldOpen) {
+					return; // Door is closed, can't move through
+				}
+			}
+
+			// Check if it's a key
+			if (typeof targetCell === 'object' && targetCell.type === 'key' && !targetCell.collected) {
+				// Collect the key
+				collectedKeys.add(targetCell.id);
+				targetCell.collected = true;
+				// Force reactive update
+				contents = contents;
+			}
+
+			// Move to the new position
 			player.x = newX;
 			player.y = newY;
+			// Force door state update after movement
+			updateDoorStates();
 		}
-		// If it's a wall or out of bounds, don't move
+		// If it's out of bounds, don't move
 	}
 
 	function turnLeft(): void {
@@ -304,12 +358,14 @@
 	}
 
 	function resetProgram(): void {
+		isRunning = false; // Stop any running program
 		hasRun = false;
 		solved = false;
 		let found: boolean = false;
 		for (let i = 0; i < h && !found; i++) {
 			for (let j = 0; j < w && !found; j++) {
-				if (contents[i][j] == 1) {
+				const cell = contents[i][j];
+				if (cell == 1) {
 					player.x = j;
 					player.y = i;
 					found = true;
@@ -322,6 +378,24 @@
 		}
 		player.facing = 0;
 		rotation = 0;
+		currentExecutingIndex = -1;
+		currentExecutingPath = [];
+
+		// Reset collected keys
+		collectedKeys.clear();
+		// Reset all keys to uncollected
+		for (let i = 0; i < h; i++) {
+			for (let j = 0; j < w; j++) {
+				const cell = contents[i][j];
+				if (typeof cell === 'object' && cell.type === 'key') {
+					cell.collected = false;
+				}
+			}
+		}
+		// Force reactive update for keys
+		contents = contents;
+		// Update door states after reset (but keep programmed door codes)
+		updateDoorStates();
 	}
 
 	async function runProgram(): Promise<void> {
@@ -331,13 +405,21 @@
 		await executeCommands(commands, []);
 		currentExecutingIndex = -1;
 		currentExecutingPath = [];
-		isRunning = false;
-		checkWin();
-		hasRun = true;
+
+		// Only set hasRun to true if execution wasn't interrupted
+		if (isRunning) {
+			isRunning = false;
+			checkWin();
+			hasRun = true;
+		}
+		// If isRunning is false here, it means resetProgram was called and we shouldn't set hasRun
 	}
 
 	async function executeCommands(commandList: ProgramCommand[], path: number[]): Promise<void> {
 		for (let i = 0; i < commandList.length; i++) {
+			// Check if execution should stop
+			if (!isRunning) return;
+
 			const currentPath = [...path, i];
 			currentExecutingIndex = i;
 			currentExecutingPath = currentPath;
@@ -359,12 +441,14 @@
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			} else if (command.type === 'loop') {
 				for (let loopIteration = 0; loopIteration < command.times; loopIteration++) {
+					// Check if execution should stop during loop
+					if (!isRunning) return;
 					await executeCommands(command.commands, currentPath);
 				}
 			}
 		}
 	}
-	function checkWin() {
+	function checkWin(): void {
 		if (player.x == goal.x && player.y == goal.y) {
 			if (!solved) {
 				solved = true;
@@ -380,7 +464,7 @@
 		}
 	}
 
-	function triggerConfetti() {
+	function triggerConfetti(): void {
 		confetti({
 			particleCount: 150,
 			spread: 70,
@@ -406,6 +490,219 @@
 			});
 		}, 400);
 	}
+
+	// Door functionality
+	let selectedDoor: Door | null = null;
+	let showDoorDialog = false;
+	let doorCommands: string[] = [];
+
+	// Reactive door states that update when player position changes
+	let doorStates = new Map();
+
+	function updateDoorStates() {
+		const states = new Map();
+		for (let i = 0; i < h; i++) {
+			for (let j = 0; j < w; j++) {
+				const cell = contents[i][j];
+				if (typeof cell === 'object' && cell.type === 'door') {
+					states.set(cell.id, executeDoorLogic(cell));
+				}
+			}
+		}
+		// Force reactivity for key collection
+		collectedKeys = collectedKeys;
+		doorStates = states;
+	}
+
+	// Update door states when player position changes
+	$: if (player.x !== undefined && player.y !== undefined) {
+		updateDoorStates();
+	}
+
+	function executeDoorLogic(door: Door): boolean {
+		// Initialize currentCode if not set
+		if (!door.currentCode) {
+			door.currentCode = {
+				condition: door.defaultCode.condition,
+				ifCommands: [...door.defaultCode.ifCommands],
+				elseCommands: [...door.defaultCode.elseCommands]
+			};
+		}
+
+		// Execute the door's current code logic with fixed if/else structure
+		if (!door.currentCode.ifCommands && !door.currentCode.elseCommands) {
+			return true; // Default behavior: door is open
+		}
+
+		// Evaluate condition
+		const doorPos = findDoorPosition(door);
+		let conditionMet = false;
+
+		if (door.currentCode.condition === 'player near') {
+			if (doorPos) {
+				const distance = Math.abs(player.x - doorPos.x) + Math.abs(player.y - doorPos.y);
+				conditionMet = distance <= 1;
+			}
+		} else if (door.currentCode.condition === 'always') {
+			conditionMet = true;
+		} else if (door.currentCode.condition === 'never') {
+			conditionMet = false;
+		} else if (door.currentCode.condition === 'has key') {
+			// Check if player has collected any key
+			conditionMet = collectedKeys.size > 0;
+		}
+
+		// Execute appropriate commands based on condition
+		const commandsToExecute = conditionMet
+			? door.currentCode.ifCommands
+			: door.currentCode.elseCommands;
+		let shouldOpen = false;
+
+		for (const command of commandsToExecute) {
+			if (command === 'open') {
+				shouldOpen = true;
+			} else if (command === 'close') {
+				shouldOpen = false;
+			}
+		}
+
+		return shouldOpen;
+	}
+
+	function findDoorPosition(door: Door): { x: number; y: number } | null {
+		for (let i = 0; i < h; i++) {
+			for (let j = 0; j < w; j++) {
+				const cell = contents[i][j];
+				if (typeof cell === 'object' && cell.type === 'door' && cell.id === door.id) {
+					return { x: j, y: i };
+				}
+			}
+		}
+		return null;
+	}
+
+	function resetDoorCodes() {
+		// Reset all doors to their default code
+		for (let i = 0; i < h; i++) {
+			for (let j = 0; j < w; j++) {
+				const cell = contents[i][j];
+				if (typeof cell === 'object' && cell.type === 'door') {
+					cell.currentCode = {
+						condition: cell.defaultCode.condition,
+						ifCommands: [...cell.defaultCode.ifCommands],
+						elseCommands: [...cell.defaultCode.elseCommands]
+					};
+				}
+			}
+		}
+	}
+
+	function openDoorEditor(door: Door) {
+		// Initialize currentCode if not set
+		if (!door.currentCode) {
+			door.currentCode = {
+				condition: door.defaultCode.condition,
+				ifCommands: [...door.defaultCode.ifCommands],
+				elseCommands: [...door.defaultCode.elseCommands]
+			};
+		}
+		selectedDoor = door;
+		showDoorDialog = true;
+	}
+
+	function saveDoorCode() {
+		showDoorDialog = false;
+		selectedDoor = null;
+		// Update door states after programming
+		updateDoorStates();
+	}
+
+	function cancelDoorEdit() {
+		showDoorDialog = false;
+		selectedDoor = null;
+	}
+
+	function setCondition(condition: string) {
+		if (selectedDoor && selectedDoor.currentCode) {
+			selectedDoor.currentCode.condition = condition;
+		}
+	}
+
+	function addCommandToIf(command: string) {
+		if (selectedDoor && selectedDoor.currentCode) {
+			selectedDoor.currentCode.ifCommands = [...selectedDoor.currentCode.ifCommands, command];
+		}
+	}
+
+	function addCommandToElse(command: string) {
+		if (selectedDoor && selectedDoor.currentCode) {
+			selectedDoor.currentCode.elseCommands = [...selectedDoor.currentCode.elseCommands, command];
+		}
+	}
+
+	function removeCommandFromIf(index: number) {
+		if (selectedDoor && selectedDoor.currentCode) {
+			selectedDoor.currentCode.ifCommands = selectedDoor.currentCode.ifCommands.filter(
+				(_, i) => i !== index
+			);
+		}
+	}
+
+	function removeCommandFromElse(index: number) {
+		if (selectedDoor && selectedDoor.currentCode) {
+			selectedDoor.currentCode.elseCommands = selectedDoor.currentCode.elseCommands.filter(
+				(_, i) => i !== index
+			);
+		}
+	}
+
+	function moveCommandWithinIf(fromIndex: number, toIndex: number) {
+		if (selectedDoor && selectedDoor.currentCode) {
+			const commands = [...selectedDoor.currentCode.ifCommands];
+			const [movedCommand] = commands.splice(fromIndex, 1);
+			commands.splice(toIndex, 0, movedCommand);
+			selectedDoor.currentCode.ifCommands = commands;
+		}
+	}
+
+	function moveCommandWithinElse(fromIndex: number, toIndex: number) {
+		if (selectedDoor && selectedDoor.currentCode) {
+			const commands = [...selectedDoor.currentCode.elseCommands];
+			const [movedCommand] = commands.splice(fromIndex, 1);
+			commands.splice(toIndex, 0, movedCommand);
+			selectedDoor.currentCode.elseCommands = commands;
+		}
+	}
+
+	function fullReset() {
+		// Reset everything including door codes
+		resetProgram();
+		resetDoorCodes();
+		updateDoorStates();
+	}
+
+	// Initialize door codes and states on mount
+	onMount(() => {
+		initializeDoorCodes();
+		updateDoorStates();
+	});
+
+	function initializeDoorCodes() {
+		for (let i = 0; i < h; i++) {
+			for (let j = 0; j < w; j++) {
+				const cell = contents[i][j];
+				if (typeof cell === 'object' && cell.type === 'door') {
+					if (!cell.currentCode) {
+						cell.currentCode = {
+							condition: cell.defaultCode.condition,
+							ifCommands: [...cell.defaultCode.ifCommands],
+							elseCommands: [...cell.defaultCode.elseCommands]
+						};
+					}
+				}
+			}
+		}
+	}
 </script>
 
 <div class="container" class:solved>
@@ -414,11 +711,6 @@
 		<div class="block-counter" class:at-limit={isAtBlockLimit}>
 			<span class="counter-label">Blocks:</span>
 			<span class="counter-value">{totalBlocksUsed}/{maxBlocks}</span>
-			{#if blocksRemaining !== null && blocksRemaining > 0}
-				<span class="remaining">({blocksRemaining} left)</span>
-			{:else if isAtBlockLimit}
-				<span class="limit-reached">Limit reached!</span>
-			{/if}
 		</div>
 	{/if}
 	<div class="grid-container">
@@ -428,13 +720,34 @@
 					<div
 						class="gridSquare"
 						class:wall={contents[row][col] === 3}
+						class:door={typeof contents[row][col] === 'object' &&
+							contents[row][col].type === 'door'}
+						class:key={typeof contents[row][col] === 'object' &&
+							contents[row][col].type === 'key' &&
+							!contents[row][col].collected}
 						class:top-left={row === 0 && col === 0}
 						class:top-right={row === 0 && col === w - 1}
 						class:bottom-left={row === h - 1 && col === 0}
 						class:bottom-right={row === h - 1 && col === w - 1}
 						data-row={row}
 						data-col={col}
+						on:click={() => {
+							const cell = contents[row][col];
+							if (typeof cell === 'object' && cell.type === 'door') {
+								openDoorEditor(cell);
+							}
+						}}
 					>
+						{#if typeof contents[row][col] === 'object' && contents[row][col].type === 'door'}
+							{@const door = contents[row][col]}
+							<div class="door-icon" class:door-open={doorStates.get(door.id)}>
+								<span style="color: white; font-size: 10px;">
+									{doorStates.get(door.id) ? 'OPEN' : 'CLOSED'}
+								</span>
+							</div>
+						{:else if typeof contents[row][col] === 'object' && contents[row][col].type === 'key' && !contents[row][col].collected}
+							<div class="key-icon"></div>
+						{/if}
 						<!-- <p>{contents[row][col]}</p> -->
 					</div>
 				{/each}
@@ -498,11 +811,11 @@
 			<h3>Program</h3>
 			<div
 				class="command-list"
-				on:dragover={(e) => e.preventDefault()}
-				on:drop={(e) => {
-					const rect = e.currentTarget!.getBoundingClientRect();
+				on:dragover={(e: DragEvent) => e.preventDefault()}
+				on:drop={(e: DragEvent) => {
+					const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 					const y = e.clientY - rect.top;
-					const items = e.currentTarget!.querySelectorAll('.draggable-command');
+					const items = (e.currentTarget as HTMLElement).querySelectorAll('.draggable-command');
 					let dropIndex: number = commands.length;
 
 					for (let i = 0; i < items.length; i++) {
@@ -528,9 +841,9 @@
 							class:turn-left={command === 'turnLeft'}
 							class:turn-right={command === 'turnRight'}
 							draggable="true"
-							on:dragstart={(e) => handleDragStart(e, index)}
-							on:dragover={(e) => handleDragOver(e, index)}
-							on:drop={(e) => handleDrop(e, index)}
+							on:dragstart={(e: DragEvent) => handleDragStart(e, index)}
+							on:dragover={(e: DragEvent) => handleDragOver(e, index)}
+							on:drop={(e: DragEvent) => handleDrop(e, index)}
 							on:dragend={handleDragEnd}
 							on:dragleave={handleDragLeave}
 						>
@@ -571,9 +884,9 @@
 							class:drag-over={dragOverIndex === index}
 							class:executing={currentExecutingIndex === index && currentExecutingPath.length === 1}
 							draggable="true"
-							on:dragstart={(e) => handleDragStart(e, index)}
-							on:dragover={(e) => handleDragOver(e, index)}
-							on:drop={(e) => handleDrop(e, index)}
+							on:dragstart={(e: DragEvent) => handleDragStart(e, index)}
+							on:dragover={(e: DragEvent) => handleDragOver(e, index)}
+							on:drop={(e: DragEvent) => handleDrop(e, index)}
 							on:dragend={handleDragEnd}
 							on:dragleave={handleDragLeave}
 						>
@@ -611,11 +924,11 @@
 							<div class="loop-commands">
 								<div
 									class="loop-drop-zone"
-									on:dragover={(e) => {
+									on:dragover={(e: DragEvent) => {
 										e.preventDefault();
 										e.stopPropagation();
 									}}
-									on:drop={(e) => {
+									on:drop={(e: DragEvent) => {
 										e.preventDefault();
 										e.stopPropagation();
 										handleDrop(e, 0, index);
@@ -635,15 +948,15 @@
 											class:dragging={draggedFromLoop === index &&
 												draggedLoopCommandIndex === loopIndex}
 											draggable="true"
-											on:dragstart={(e) => {
+											on:dragstart={(e: DragEvent) => {
 												e.stopPropagation();
 												handleDragStart(e, index, index, loopIndex);
 											}}
-											on:dragover={(e) => {
+											on:dragover={(e: DragEvent) => {
 												e.preventDefault();
 												e.stopPropagation();
 											}}
-											on:drop={(e) => {
+											on:drop={(e: DragEvent) => {
 												e.preventDefault();
 												e.stopPropagation();
 												if (
@@ -666,7 +979,7 @@
 												}
 												clearDragState();
 											}}
-											on:dragend={(e) => {
+											on:dragend={(e: DragEvent) => {
 												e.stopPropagation();
 												handleDragEnd();
 											}}
@@ -735,9 +1048,282 @@
 			</div>
 		{/if}
 
+		{#if showDoorDialog && selectedDoor}
+			<div class="modal-overlay" on:click={cancelDoorEdit}>
+				<div class="modal door-modal" on:click|stopPropagation>
+					<h3>Program Door</h3>
+					<div class="door-commands">
+						{#if selectedDoor.editable}
+							<div class="command-blocks">
+								<div class="block-section">
+									<h3>Conditions:</h3>
+									<div class="block-row">
+										<button
+											class="command-block condition"
+											draggable="true"
+											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'player near')}
+											on:click={() => setCondition('player near')}
+										>
+											Player Near
+										</button>
+										<button
+											class="command-block condition"
+											draggable="true"
+											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'always')}
+											on:click={() => setCondition('always')}
+										>
+											Always
+										</button>
+										<button
+											class="command-block condition"
+											draggable="true"
+											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'never')}
+											on:click={() => setCondition('never')}
+										>
+											Never
+										</button>
+										<button
+											class="command-block condition"
+											draggable="true"
+											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'has key')}
+											on:click={() => setCondition('has key')}
+										>
+											Has Key
+										</button>
+									</div>
+								</div>
+
+								<div class="block-section">
+									<h3>Actions:</h3>
+									<div class="block-row">
+										<button
+											class="command-block forward"
+											draggable="true"
+											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'open')}
+											on:click={() => addCommandToIf('open')}
+										>
+											Open
+										</button>
+										<button
+											class="command-block turn-right"
+											draggable="true"
+											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'close')}
+											on:click={() => addCommandToIf('close')}
+										>
+											Close
+										</button>
+									</div>
+								</div>
+							</div>
+						{/if}
+
+						<div class="door-program">
+							<div class="program-section">
+								<div class="section-header">
+									<span class="keyword">if</span>
+								</div>
+								<div
+									class="condition-drop-zone"
+									class:read-only={!selectedDoor.editable}
+									on:drop={(e) => {
+										if (!selectedDoor.editable) return;
+										e.preventDefault();
+										const condition = e.dataTransfer.getData('text/plain');
+										if (['player near', 'always', 'never', 'has key'].includes(condition)) {
+											setCondition(condition);
+										}
+									}}
+									on:dragover={(e) => selectedDoor.editable && e.preventDefault()}
+								>
+									{#if selectedDoor.currentCode?.condition}
+										<div class="command-item full-width condition">
+											<span class="command-number">1</span>
+											<span class="command-text">{selectedDoor.currentCode.condition}</span>
+											{#if selectedDoor.editable}
+												<button class="remove-btn" on:click={() => setCondition('')}>
+													<svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+														<path
+															stroke="currentColor"
+															stroke-width="2"
+															d="M6 6l12 12M18 6l-12 12"
+														/>
+													</svg>
+												</button>
+											{/if}
+										</div>
+									{:else if selectedDoor.editable}
+										<div class="empty-condition">Drop condition here</div>
+									{/if}
+								</div>
+							</div>
+
+							<div class="program-section">
+								<div class="section-header">
+									<span class="keyword">then</span>
+								</div>
+								<div
+									class="command-drop-zone if-commands"
+									class:read-only={!selectedDoor.editable}
+									on:drop={(e) => {
+										if (!selectedDoor.editable) return;
+										e.preventDefault();
+										const data = e.dataTransfer.getData('text/plain');
+										try {
+											const parsedData = JSON.parse(data);
+											if (parsedData.fromBlock) {
+												// Moving from another block
+												if (parsedData.fromBlock === 'if') {
+													removeCommandFromIf(parsedData.fromIndex);
+												} else {
+													removeCommandFromElse(parsedData.fromIndex);
+												}
+												addCommandToIf(parsedData.command);
+											} else {
+												// New command from palette
+												addCommandToIf(data);
+											}
+										} catch {
+											// Fallback for simple string data
+											addCommandToIf(data);
+										}
+									}}
+									on:dragover={(e) => selectedDoor.editable && e.preventDefault()}
+								>
+									{#if selectedDoor.currentCode?.ifCommands.length === 0}
+										{#if selectedDoor.editable}
+											<div class="empty-program">Drag commands here</div>
+										{:else}
+											<div class="empty-program">No commands</div>
+										{/if}
+									{:else}
+										{#each selectedDoor.currentCode?.ifCommands || [] as command, index}
+											<div
+												class="command-item full-width {command === 'open'
+													? 'forward'
+													: 'turn-right'}"
+												draggable={selectedDoor.editable}
+												on:dragstart={(e) => {
+													if (!selectedDoor.editable) return;
+													e.dataTransfer.setData(
+														'text/plain',
+														JSON.stringify({ command, fromIndex: index, fromBlock: 'if' })
+													);
+												}}
+											>
+												{#if selectedDoor.editable}
+													<span class="drag-handle">⋮⋮</span>
+												{/if}
+												<span class="command-number">{index + 1}</span>
+												<span class="command-text">{command}</span>
+												{#if selectedDoor.editable}
+													<button class="remove-btn" on:click={() => removeCommandFromIf(index)}>
+														<svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+															<path
+																stroke="currentColor"
+																stroke-width="2"
+																d="M6 6l12 12M18 6l-12 12"
+															/>
+														</svg>
+													</button>
+												{/if}
+											</div>
+										{/each}
+									{/if}
+								</div>
+							</div>
+
+							<div class="program-section">
+								<div class="section-header">
+									<span class="keyword">else</span>
+								</div>
+								<div
+									class="command-drop-zone else-commands"
+									class:read-only={!selectedDoor.editable}
+									on:drop={(e) => {
+										if (!selectedDoor.editable) return;
+										e.preventDefault();
+										const data = e.dataTransfer.getData('text/plain');
+										try {
+											const parsedData = JSON.parse(data);
+											if (parsedData.fromBlock) {
+												// Moving from another block
+												if (parsedData.fromBlock === 'if') {
+													removeCommandFromIf(parsedData.fromIndex);
+												} else {
+													removeCommandFromElse(parsedData.fromIndex);
+												}
+												addCommandToElse(parsedData.command);
+											} else {
+												// New command from palette
+												addCommandToElse(data);
+											}
+										} catch {
+											// Fallback for simple string data
+											addCommandToElse(data);
+										}
+									}}
+									on:dragover={(e) => selectedDoor.editable && e.preventDefault()}
+								>
+									{#if selectedDoor.currentCode?.elseCommands.length === 0}
+										{#if selectedDoor.editable}
+											<div class="empty-program">Drag commands here</div>
+										{:else}
+											<div class="empty-program">No commands</div>
+										{/if}
+									{:else}
+										{#each selectedDoor.currentCode?.elseCommands || [] as command, index}
+											<div
+												class="command-item full-width {command === 'open'
+													? 'forward'
+													: 'turn-right'}"
+												draggable={selectedDoor.editable}
+												on:dragstart={(e) => {
+													if (!selectedDoor.editable) return;
+													e.dataTransfer.setData(
+														'text/plain',
+														JSON.stringify({ command, fromIndex: index, fromBlock: 'else' })
+													);
+												}}
+											>
+												{#if selectedDoor.editable}
+													<span class="drag-handle">⋮⋮</span>
+												{/if}
+												<span class="command-number">{index + 1}</span>
+												<span class="command-text">{command}</span>
+												{#if selectedDoor.editable}
+													<button class="remove-btn" on:click={() => removeCommandFromElse(index)}>
+														<svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+															<path
+																stroke="currentColor"
+																stroke-width="2"
+																d="M6 6l12 12M18 6l-12 12"
+															/>
+														</svg>
+													</button>
+												{/if}
+											</div>
+										{/each}
+									{/if}
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="modal-buttons">
+						<button class="modal-btn cancel" on:click={cancelDoorEdit}>
+							{selectedDoor.editable ? 'Cancel' : 'Close'}
+						</button>
+						{#if selectedDoor.editable}
+							<button class="modal-btn confirm" on:click={saveDoorCode}>Save</button>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
+
 		<div class="control-buttons">
 			{#if isRunning}
-				<button class="control-btn disabled" disabled> Running... </button>
+				<button class="control-btn reset" on:click={resetProgram}> Reset </button>
 			{:else if hasRun}
 				<button class="control-btn reset" on:click={resetProgram}> Reset </button>
 			{:else}
@@ -865,6 +1451,47 @@
 
 	.gridSquare.bottom-right {
 		border-bottom-right-radius: 8px;
+	}
+
+	.gridSquare.door {
+		background-color: #8b4513;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+		transition: all 0.3s ease;
+	}
+
+	.gridSquare.door:hover {
+		background-color: #a0522d;
+	}
+
+	.gridSquare.key {
+		background-color: #ffd700;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+	}
+
+	.key-icon {
+		font-size: 1.2em;
+		color: #444;
+	}
+
+	.door-icon {
+		width: 100%;
+		height: 100%;
+		transition: all 0.3s ease;
+		border: 3px solid #654321;
+		box-sizing: border-box;
+	}
+
+	.door-icon.door-open {
+		background-color: #66bb6a;
+		border-color: #4caf50;
+		box-shadow: inset 0 0 15px rgba(76, 175, 80, 0.6);
 	}
 	.marker {
 		position: absolute;
@@ -1301,5 +1928,185 @@
 
 	.control-btn.reset:hover:not(:disabled) {
 		background-color: #d32f2f;
+	}
+
+	/* Door-specific styles */
+	.door-modal {
+		width: 500px;
+		max-height: 600px;
+		overflow-y: auto;
+	}
+
+	.door-commands {
+		margin: 20px 0;
+	}
+
+	.command-options {
+		display: flex;
+		gap: 10px;
+		margin-bottom: 15px;
+	}
+
+	.command-group {
+		margin-bottom: 15px;
+	}
+
+	.door-modal .block-row {
+		padding-bottom: 20px;
+	}
+
+	.block-section {
+		margin-bottom: 20px;
+	}
+
+	.block-section h3 {
+		margin: 0 0 10px 0;
+		color: #333;
+		font-size: 16px;
+	}
+
+	.program-section {
+		margin-bottom: 20px;
+		border: 1px solid #dee2e6;
+		border-radius: 8px;
+		overflow: hidden;
+	}
+
+	.section-header {
+		background-color: #f8f9fa;
+		padding: 12px 16px;
+		border-bottom: 1px solid #dee2e6;
+	}
+
+	.condition-drop-zone {
+		min-height: 60px;
+		border: 2px dashed #6c757d;
+		border-radius: 8px;
+		margin: 16px;
+		padding: 12px;
+		background-color: white;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.2s ease;
+		box-sizing: border-box;
+	}
+
+	.condition-drop-zone:hover {
+		border-color: #495057;
+		background-color: #f8f9fa;
+	}
+
+	.condition-drop-zone.read-only {
+		border-style: solid;
+		background-color: #f8f9fa;
+	}
+
+	.condition-drop-zone.read-only:hover {
+		background-color: #f8f9fa;
+		border-color: #6c757d;
+	}
+
+	.command-drop-zone {
+		min-height: 60px;
+		margin: 16px;
+		padding: 12px;
+		background-color: white;
+		box-sizing: border-box;
+	}
+
+	.command-item.full-width {
+		width: calc(100% - 8px);
+		margin-bottom: 4px;
+		padding: 6px 10px;
+		box-sizing: border-box;
+	}
+
+	.command-item.condition {
+		background-color: #e3f2fd;
+		color: #1976d2;
+		border: 2px solid #1976d2;
+	}
+
+	.command-item.condition:hover {
+		border-color: #0d47a1;
+		background-color: #bbdefb;
+	}
+
+	.command-block.condition {
+		background-color: #2196f3;
+		border: 2px solid #1976d2;
+		color: white;
+	}
+
+	.command-block.condition:hover:not(:disabled) {
+		background-color: #1976d2;
+	}
+
+	.empty-condition {
+		color: #6c757d;
+		font-style: italic;
+		text-align: center;
+	}
+
+	.keyword {
+		color: #0066cc;
+		font-weight: bold;
+		font-size: 14px;
+	}
+
+	.condition-text {
+		color: #cc6600;
+		font-style: italic;
+		font-size: 14px;
+	}
+
+	.if-commands {
+		border: 2px dashed #28a745;
+		min-height: 40px;
+		border-radius: 8px;
+	}
+
+	.else-commands {
+		border: 2px dashed #ffc107;
+		border-radius: 8px;
+	}
+
+	.command-drop-zone:hover {
+		background-color: #f8f9fa;
+	}
+
+	.if-commands:hover {
+		border-color: #1e7e34;
+		background-color: #f8fff8;
+	}
+
+	.else-commands:hover {
+		border-color: #e0a800;
+		background-color: #fffdf8;
+	}
+
+	.command-drop-zone.read-only {
+		border-style: solid;
+		background-color: #f8f9fa;
+	}
+
+	.command-drop-zone.read-only:hover {
+		background-color: #f8f9fa;
+		border-color: inherit;
+	}
+
+	.door-program h4 {
+		margin: 0 0 10px 0;
+		color: #333;
+	}
+
+	.empty-door-program {
+		padding: 20px;
+		text-align: center;
+		color: #666;
+		background-color: #f5f5f5;
+		border-radius: 4px;
+		font-style: italic;
 	}
 </style>
