@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Grid from '$lib/components/Grid.svelte';
+	import Tf2Coconut from '$lib/components/TF2Coconut.svelte';
 	import { onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
 
@@ -8,7 +9,10 @@
 		id: string;
 		defaultCode: { condition: string; ifCommands: string[]; elseCommands: string[] };
 		currentCode?: { condition: string; ifCommands: string[]; elseCommands: string[] };
-		editable: boolean;
+		allowedConditions: string[];
+		allowedActions: string[];
+		conditionsEditable: boolean;
+		actionsEditable: boolean;
 		isOpen?: boolean;
 	}
 
@@ -29,102 +33,19 @@
 	let completedLevels: boolean[] = [];
 	let levelElements: HTMLElement[] = [];
 	let congratulationsElement: HTMLElement;
+	let levels: Level[] = [];
 
-	/// Define Levels
-	const levels: Level[] = [
-		{
-			title: 'no way',
-			contents: [
-				[0, 0, 0, 0, 0],
-				[0, 0, 2, 0, 0],
-				[0, 0, 0, 0, 0],
-				[0, 0, 0, 0, 0],
-				[0, 0, 1, 0, 0]
-			],
-			allowedCommands: ['f']
-		},
-		{
-			title: 'no way 2',
-			contents: [
-				[0, 0, 0, 0, 0],
-				[0, 0, 0, 0, 2],
-				[0, 0, 0, 0, 0],
-				[0, 0, 0, 0, 0],
-				[0, 0, 1, 0, 0]
-			],
-			allowedCommands: ['f', 'r']
-		},
-		{
-			title: 'no way 3',
-			contents: [
-				[0, 0, 0, 0, 0],
-				[0, 0, 2, 0, 0],
-				[0, 0, 0, 0, 0],
-				[0, 0, 3, 0, 0],
-				[0, 0, 1, 0, 0]
-			],
-			allowedCommands: ['f', 'r', 'l']
-		},
-		{
-			title: 'no way 4',
-			contents: [
-				[0, 0, 0, 0, 0],
-				[0, 0, 2, 0, 0],
-				[0, 0, 0, 0, 0],
-				[0, 0, 0, 0, 0],
-				[0, 0, 1, 0, 0]
-			],
-			allowedCommands: ['f', 'r', 'l', 'loop'],
-			maxBlocks: 2
-		},
-		{
-			title: 'no way 5',
-			contents: [
-				[3, 0, 2],
-				[0, 0, 3],
-				[1, 3, 3]
-			],
-			allowedCommands: ['f', 'r', 'l', 'loop'],
-			maxBlocks: 5
-		},
-		{
-			title: 'Door™',
-			contents: [
-				[0, 0, 0, 0, 0],
-				[0, 0, 2, 0, 0],
-				[
-					0,
-					0,
-					{
-						type: 'door',
-						id: 'smartDoor',
-						defaultCode: { condition: 'has key', ifCommands: ['open'], elseCommands: ['close'] },
-						editable: false,
-						isOpen: false
-					} as Door,
-					0,
-					0
-				],
-				[
-					0,
-					0,
-					{
-						type: 'key',
-						id: 'key1',
-						collected: false
-					} as Key,
-					0,
-					0
-				],
-				[0, 0, 1, 0, 0]
-			],
-			allowedCommands: ['f', 'r', 'l'],
-			maxBlocks: 3
+	onMount(async (): Promise<void> => {
+		// Load levels from JSON file
+		try {
+			const response = await fetch('/levels.json');
+			levels = await response.json();
+			completedLevels = new Array(levels.length).fill(false);
+		} catch (error) {
+			console.error('Error loading levels:', error);
+			levels = [];
+			completedLevels = [];
 		}
-	];
-
-	onMount((): void => {
-		completedLevels = new Array(levels.length).fill(false);
 	});
 
 	function handleLevelComplete(levelIndex: number): void {
@@ -228,6 +149,7 @@
 		</div>
 	{/if}
 </div>
+<Tf2Coconut />
 
 <style>
 	.game-container {

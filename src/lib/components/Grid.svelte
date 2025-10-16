@@ -7,7 +7,10 @@
 		id: string;
 		defaultCode: { condition: string; ifCommands: string[]; elseCommands: string[] };
 		currentCode?: { condition: string; ifCommands: string[]; elseCommands: string[] };
-		editable: boolean;
+		allowedConditions: string[];
+		allowedActions: string[];
+		conditionsEditable: boolean;
+		actionsEditable: boolean;
 		isOpen?: boolean;
 	}
 
@@ -550,6 +553,9 @@
 		} else if (door.currentCode.condition === 'has key') {
 			// Check if player has collected any key
 			conditionMet = collectedKeys.size > 0;
+		} else if (door.currentCode.condition === 'does not have key') {
+			// Check if player has NOT collected any key
+			conditionMet = collectedKeys.size === 0;
 		}
 
 		// Execute appropriate commands based on condition
@@ -1053,67 +1059,43 @@
 				<div class="modal door-modal" on:click|stopPropagation>
 					<h3>Program Door</h3>
 					<div class="door-commands">
-						{#if selectedDoor.editable}
+						{#if selectedDoor.conditionsEditable || selectedDoor.actionsEditable}
 							<div class="command-blocks">
-								<div class="block-section">
-									<h3>Conditions:</h3>
-									<div class="block-row">
-										<button
-											class="command-block condition"
-											draggable="true"
-											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'player near')}
-											on:click={() => setCondition('player near')}
-										>
-											Player Near
-										</button>
-										<button
-											class="command-block condition"
-											draggable="true"
-											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'always')}
-											on:click={() => setCondition('always')}
-										>
-											Always
-										</button>
-										<button
-											class="command-block condition"
-											draggable="true"
-											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'never')}
-											on:click={() => setCondition('never')}
-										>
-											Never
-										</button>
-										<button
-											class="command-block condition"
-											draggable="true"
-											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'has key')}
-											on:click={() => setCondition('has key')}
-										>
-											Has Key
-										</button>
+								{#if selectedDoor.conditionsEditable}
+									<div class="block-section">
+										<h3>Conditions:</h3>
+										<div class="block-row">
+											{#each selectedDoor.allowedConditions as condition}
+												<button
+													class="command-block condition"
+													draggable="true"
+													on:dragstart={(e) => e.dataTransfer.setData('text/plain', condition)}
+													on:click={() => setCondition(condition)}
+												>
+													{condition}
+												</button>
+											{/each}
+										</div>
 									</div>
-								</div>
+								{/if}
 
-								<div class="block-section">
-									<h3>Actions:</h3>
-									<div class="block-row">
-										<button
-											class="command-block forward"
-											draggable="true"
-											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'open')}
-											on:click={() => addCommandToIf('open')}
-										>
-											Open
-										</button>
-										<button
-											class="command-block turn-right"
-											draggable="true"
-											on:dragstart={(e) => e.dataTransfer.setData('text/plain', 'close')}
-											on:click={() => addCommandToIf('close')}
-										>
-											Close
-										</button>
+								{#if selectedDoor.actionsEditable}
+									<div class="block-section">
+										<h3>Actions:</h3>
+										<div class="block-row">
+											{#each selectedDoor.allowedActions as action}
+												<button
+													class="command-block forward"
+													draggable="true"
+													on:dragstart={(e) => e.dataTransfer.setData('text/plain', action)}
+													on:click={() => addCommandToIf(action)}
+												>
+													{action}
+												</button>
+											{/each}
+										</div>
 									</div>
-								</div>
+								{/if}
 							</div>
 						{/if}
 
@@ -1124,22 +1106,22 @@
 								</div>
 								<div
 									class="condition-drop-zone"
-									class:read-only={!selectedDoor.editable}
+									class:read-only={!selectedDoor.conditionsEditable}
 									on:drop={(e) => {
-										if (!selectedDoor.editable) return;
+										if (!selectedDoor.conditionsEditable) return;
 										e.preventDefault();
 										const condition = e.dataTransfer.getData('text/plain');
-										if (['player near', 'always', 'never', 'has key'].includes(condition)) {
+										if (selectedDoor.allowedConditions.includes(condition)) {
 											setCondition(condition);
 										}
 									}}
-									on:dragover={(e) => selectedDoor.editable && e.preventDefault()}
+									on:dragover={(e) => selectedDoor.conditionsEditable && e.preventDefault()}
 								>
 									{#if selectedDoor.currentCode?.condition}
 										<div class="command-item full-width condition">
 											<span class="command-number">1</span>
 											<span class="command-text">{selectedDoor.currentCode.condition}</span>
-											{#if selectedDoor.editable}
+											{#if selectedDoor.conditionsEditable}
 												<button class="remove-btn" on:click={() => setCondition('')}>
 													<svg width="12" height="12" viewBox="0 0 24 24" fill="none">
 														<path
@@ -1151,7 +1133,7 @@
 												</button>
 											{/if}
 										</div>
-									{:else if selectedDoor.editable}
+									{:else if selectedDoor.conditionsEditable}
 										<div class="empty-condition">Drop condition here</div>
 									{/if}
 								</div>
@@ -1163,9 +1145,9 @@
 								</div>
 								<div
 									class="command-drop-zone if-commands"
-									class:read-only={!selectedDoor.editable}
+									class:read-only={!selectedDoor.actionsEditable}
 									on:drop={(e) => {
-										if (!selectedDoor.editable) return;
+										if (!selectedDoor.actionsEditable) return;
 										e.preventDefault();
 										const data = e.dataTransfer.getData('text/plain');
 										try {
@@ -1187,10 +1169,10 @@
 											addCommandToIf(data);
 										}
 									}}
-									on:dragover={(e) => selectedDoor.editable && e.preventDefault()}
+									on:dragover={(e) => selectedDoor.actionsEditable && e.preventDefault()}
 								>
 									{#if selectedDoor.currentCode?.ifCommands.length === 0}
-										{#if selectedDoor.editable}
+										{#if selectedDoor.actionsEditable}
 											<div class="empty-program">Drag commands here</div>
 										{:else}
 											<div class="empty-program">No commands</div>
@@ -1201,21 +1183,21 @@
 												class="command-item full-width {command === 'open'
 													? 'forward'
 													: 'turn-right'}"
-												draggable={selectedDoor.editable}
+												draggable={selectedDoor.actionsEditable}
 												on:dragstart={(e) => {
-													if (!selectedDoor.editable) return;
+													if (!selectedDoor.actionsEditable) return;
 													e.dataTransfer.setData(
 														'text/plain',
 														JSON.stringify({ command, fromIndex: index, fromBlock: 'if' })
 													);
 												}}
 											>
-												{#if selectedDoor.editable}
+												{#if selectedDoor.actionsEditable}
 													<span class="drag-handle">⋮⋮</span>
 												{/if}
 												<span class="command-number">{index + 1}</span>
 												<span class="command-text">{command}</span>
-												{#if selectedDoor.editable}
+												{#if selectedDoor.actionsEditable}
 													<button class="remove-btn" on:click={() => removeCommandFromIf(index)}>
 														<svg width="12" height="12" viewBox="0 0 24 24" fill="none">
 															<path
@@ -1238,9 +1220,9 @@
 								</div>
 								<div
 									class="command-drop-zone else-commands"
-									class:read-only={!selectedDoor.editable}
+									class:read-only={!selectedDoor.actionsEditable}
 									on:drop={(e) => {
-										if (!selectedDoor.editable) return;
+										if (!selectedDoor.actionsEditable) return;
 										e.preventDefault();
 										const data = e.dataTransfer.getData('text/plain');
 										try {
@@ -1262,10 +1244,10 @@
 											addCommandToElse(data);
 										}
 									}}
-									on:dragover={(e) => selectedDoor.editable && e.preventDefault()}
+									on:dragover={(e) => selectedDoor.actionsEditable && e.preventDefault()}
 								>
 									{#if selectedDoor.currentCode?.elseCommands.length === 0}
-										{#if selectedDoor.editable}
+										{#if selectedDoor.actionsEditable}
 											<div class="empty-program">Drag commands here</div>
 										{:else}
 											<div class="empty-program">No commands</div>
@@ -1276,21 +1258,21 @@
 												class="command-item full-width {command === 'open'
 													? 'forward'
 													: 'turn-right'}"
-												draggable={selectedDoor.editable}
+												draggable={selectedDoor.actionsEditable}
 												on:dragstart={(e) => {
-													if (!selectedDoor.editable) return;
+													if (!selectedDoor.actionsEditable) return;
 													e.dataTransfer.setData(
 														'text/plain',
 														JSON.stringify({ command, fromIndex: index, fromBlock: 'else' })
 													);
 												}}
 											>
-												{#if selectedDoor.editable}
+												{#if selectedDoor.actionsEditable}
 													<span class="drag-handle">⋮⋮</span>
 												{/if}
 												<span class="command-number">{index + 1}</span>
 												<span class="command-text">{command}</span>
-												{#if selectedDoor.editable}
+												{#if selectedDoor.actionsEditable}
 													<button class="remove-btn" on:click={() => removeCommandFromElse(index)}>
 														<svg width="12" height="12" viewBox="0 0 24 24" fill="none">
 															<path
@@ -1311,9 +1293,9 @@
 
 					<div class="modal-buttons">
 						<button class="modal-btn cancel" on:click={cancelDoorEdit}>
-							{selectedDoor.editable ? 'Cancel' : 'Close'}
+							{selectedDoor.conditionsEditable || selectedDoor.actionsEditable ? 'Cancel' : 'Close'}
 						</button>
-						{#if selectedDoor.editable}
+						{#if selectedDoor.conditionsEditable || selectedDoor.actionsEditable}
 							<button class="modal-btn confirm" on:click={saveDoorCode}>Save</button>
 						{/if}
 					</div>
@@ -2093,7 +2075,6 @@
 
 	.command-drop-zone.read-only:hover {
 		background-color: #f8f9fa;
-		border-color: inherit;
 	}
 
 	.door-program h4 {
