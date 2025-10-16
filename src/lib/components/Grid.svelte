@@ -145,40 +145,33 @@
 				break;
 		}
 
-		// Check if the target position is valid
 		if (newX >= 0 && newX < w && newY >= 0 && newY < h) {
 			const targetCell = contents[newY][newX];
 
-			// Check if it's a wall
+			// Wall logic
 			if (targetCell === 3) {
-				return; // Can't move through walls
+				return; // Wall is closed
 			}
 
-			// Check if it's a door
+			// Door logic
 			if (typeof targetCell === 'object' && targetCell.type === 'door') {
-				// Execute door logic to see if it should open
 				const shouldOpen = executeDoorLogic(targetCell);
 				if (!shouldOpen) {
-					return; // Door is closed, can't move through
+					return; // Door is closed
 				}
 			}
 
-			// Check if it's a key
+			// Key logic
 			if (typeof targetCell === 'object' && targetCell.type === 'key' && !targetCell.collected) {
-				// Collect the key
 				collectedKeys.add(targetCell.id);
 				targetCell.collected = true;
-				// Force reactive update
-				contents = contents;
+				contents = contents; //cursed jank that fixes things for some reason sometimes
 			}
 
-			// Move to the new position
 			player.x = newX;
 			player.y = newY;
-			// Force door state update after movement
 			updateDoorStates();
 		}
-		// If it's out of bounds, don't move
 	}
 
 	function turnLeft(): void {
@@ -203,14 +196,12 @@
 
 	function addLoop(): void {
 		if (editingLoopIndex !== null) {
-			// Editing existing loop
 			const newCommands = [...commands];
 			const loop = newCommands[editingLoopIndex] as LoopCommand;
 			loop.times = loopTimes;
 			commands = newCommands;
 			editingLoopIndex = null;
 		} else {
-			// Creating new loop
 			if (isAtBlockLimit) return;
 			const newLoop: LoopCommand = {
 				type: 'loop',
@@ -384,9 +375,7 @@
 		currentExecutingIndex = -1;
 		currentExecutingPath = [];
 
-		// Reset collected keys
 		collectedKeys.clear();
-		// Reset all keys to uncollected
 		for (let i = 0; i < h; i++) {
 			for (let j = 0; j < w; j++) {
 				const cell = contents[i][j];
@@ -395,9 +384,7 @@
 				}
 			}
 		}
-		// Force reactive update for keys
 		contents = contents;
-		// Update door states after reset (but keep programmed door codes)
 		updateDoorStates();
 	}
 
@@ -541,12 +528,7 @@
 		const doorPos = findDoorPosition(door);
 		let conditionMet = false;
 
-		if (door.currentCode.condition === 'player near') {
-			if (doorPos) {
-				const distance = Math.abs(player.x - doorPos.x) + Math.abs(player.y - doorPos.y);
-				conditionMet = distance <= 1;
-			}
-		} else if (door.currentCode.condition === 'always') {
+		if (door.currentCode.condition === 'always') {
 			conditionMet = true;
 		} else if (door.currentCode.condition === 'never') {
 			conditionMet = false;
@@ -1394,29 +1376,7 @@
 
 	.gridSquare.wall {
 		background-color: #333333;
-		border-color: #222222;
 		position: relative;
-	}
-
-	.gridSquare.wall::before {
-		content: '';
-		position: absolute;
-		top: 2px;
-		left: 2px;
-		right: 2px;
-		bottom: 2px;
-		background:
-			linear-gradient(45deg, #444 25%, transparent 25%),
-			linear-gradient(-45deg, #444 25%, transparent 25%),
-			linear-gradient(45deg, transparent 75%, #444 75%),
-			linear-gradient(-45deg, transparent 75%, #444 75%);
-		background-size: 8px 8px;
-		background-position:
-			0 0,
-			0 4px,
-			4px -4px,
-			-4px 0px;
-		border-radius: 2px;
 	}
 
 	.gridSquare.top-left {
@@ -1439,6 +1399,7 @@
 		background-color: #8b4513;
 		cursor: pointer;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		position: relative;
@@ -1465,6 +1426,10 @@
 	.door-icon {
 		width: 100%;
 		height: 100%;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
 		transition: all 0.3s ease;
 		border: 3px solid #654321;
 		box-sizing: border-box;

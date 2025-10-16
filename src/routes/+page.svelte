@@ -29,7 +29,7 @@
 		maxBlocks?: number;
 	}
 
-	let maxUnlockedLevel: number = 6;
+	let maxUnlockedLevel: number = 7;
 	let completedLevels: boolean[] = [];
 	let levelElements: HTMLElement[] = [];
 	let congratulationsElement: HTMLElement;

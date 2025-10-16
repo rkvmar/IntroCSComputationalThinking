@@ -129,5 +129,41 @@
       [0, 0, 1, 0, 0]
     ],
     "allowedCommands": ["f", "r", "l", "loop"]
+  },
+  {
+    "title": "Hack the Door™",
+    "contents": [
+      [0, 0, 0, 0, 0],
+      [0, 0, 2, 0, 0],
+      [
+        3,
+        3,
+        {
+          "type": "door",
+          "id": "door2",
+          "defaultCode": {
+            "condition": "never",
+            "ifCommands": ["open"],
+            "elseCommands": ["close"]
+          },
+          "allowedConditions": ["never"],
+          "allowedActions": ["open", "close"],
+          "conditionsEditable": false,
+          "actionsEditable": true,
+          "isOpen": false
+        },
+        3,
+        3
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [0, 0, 1, 0, 0]
+    ],
+    "allowedCommands": ["f", "r", "l", "loop"]
   }
 ]
