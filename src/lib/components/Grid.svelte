@@ -1,7 +1,9 @@
 <script lang="ts">
+	// imports
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
 
+	// door interface from +page.svelte
 	interface Door {
 		type: 'door';
 		id: string;
@@ -14,14 +16,16 @@
 		isOpen?: boolean;
 	}
 
+	// key interface from +page.svelte
 	interface Key {
 		type: 'key';
 		id: string;
 		collected: boolean;
 	}
 
+	// component props
 	export let title: string = '';
-	export let id: number = 0;
+	export const id: number = 0;
 	export let contents: (number | Door | Key)[][] = [
 		[0, 0, 0, 0, 0],
 		[0, 0, 0, 0, 0],
@@ -100,8 +104,8 @@
 	let loopTimes: number = 2;
 	let editingLoopIndex: number | null = null;
 
-	// Calculate total blocks used
 	let totalBlocksUsed: number;
+	// weird svelte jank syntax that works for some reason
 	$: totalBlocksUsed = calculateTotalBlocks(commands);
 
 	function calculateTotalBlocks(commandList: ProgramCommand[]): number {
@@ -110,22 +114,22 @@
 			if (typeof command === 'string') {
 				count++;
 			} else if (command.type === 'loop') {
-				count++; // Loop block itself counts as 1
-				count += command.commands.length; // Add commands inside loop
+				count++;
+				count += command.commands.length;
 			}
 		}
 		return count;
 	}
 
-	// Declare variables for reactive statements
 	let blocksRemaining: number | null;
 	let isAtBlockLimit: boolean;
+	// more svelte jank syntax which is apparently deprecated now (i dont care)
 	$: blocksRemaining = maxBlocks && maxBlocks > 0 ? maxBlocks - totalBlocksUsed : null;
 	$: isAtBlockLimit = maxBlocks !== null && maxBlocks > 0 && totalBlocksUsed >= maxBlocks;
 
 	const dispatch = createEventDispatcher();
 
-	// Movement functions based on facing direction
+	// make the player do stuff
 	function moveForward(): void {
 		let newX: number = player.x;
 		let newY: number = player.y;
@@ -194,6 +198,7 @@
 		}
 	}
 
+	// code blocks
 	function addLoop(): void {
 		if (editingLoopIndex !== null) {
 			const newCommands = [...commands];
@@ -311,7 +316,6 @@
 		const fromLoop = newCommands[fromLoopIndex] as LoopCommand;
 		const [movedCommand] = fromLoop.commands.splice(commandIndex, 1);
 
-		// Insert into main program
 		newCommands.splice(toIndex, 0, movedCommand);
 		commands = newCommands;
 	}
@@ -320,7 +324,6 @@
 		const newCommands = [...commands];
 		const [movedCommand] = newCommands.splice(fromIndex, 1) as Command[];
 
-		// Adjust loop index if necessary
 		const adjustedLoopIndex = fromIndex < toLoopIndex ? toLoopIndex - 1 : toLoopIndex;
 		const toLoop = newCommands[adjustedLoopIndex] as LoopCommand;
 		toLoop.commands.push(movedCommand);
@@ -352,7 +355,7 @@
 	}
 
 	function resetProgram(): void {
-		isRunning = false; // Stop any running program
+		isRunning = false;
 		hasRun = false;
 		solved = false;
 		let found: boolean = false;
@@ -396,18 +399,16 @@
 		currentExecutingIndex = -1;
 		currentExecutingPath = [];
 
-		// Only set hasRun to true if execution wasn't interrupted
 		if (isRunning) {
 			isRunning = false;
 			checkWin();
 			hasRun = true;
 		}
-		// If isRunning is false here, it means resetProgram was called and we shouldn't set hasRun
 	}
 
+	// command jank
 	async function executeCommands(commandList: ProgramCommand[], path: number[]): Promise<void> {
 		for (let i = 0; i < commandList.length; i++) {
-			// Check if execution should stop
 			if (!isRunning) return;
 
 			const currentPath = [...path, i];
@@ -431,7 +432,7 @@
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			} else if (command.type === 'loop') {
 				for (let loopIteration = 0; loopIteration < command.times; loopIteration++) {
-					// Check if execution should stop during loop
+					// make sure the code is still running (this broke things if it wasnt there)
 					if (!isRunning) return;
 					await executeCommands(command.commands, currentPath);
 				}
@@ -442,9 +443,8 @@
 		if (player.x == goal.x && player.y == goal.y) {
 			if (!solved) {
 				solved = true;
-				// Trigger confetti effect
+				// CONFETTIIIIIIII
 				triggerConfetti();
-				// Dispatch event when level is completed for the first time
 				setTimeout(() => {
 					dispatch('levelComplete');
 				}, 500);
@@ -461,7 +461,6 @@
 			origin: { y: 0.6 }
 		});
 
-		// Additional confetti burst after a short delay
 		setTimeout(() => {
 			confetti({
 				particleCount: 100,
@@ -486,7 +485,6 @@
 	let showDoorDialog = false;
 	let doorCommands: string[] = [];
 
-	// Reactive door states that update when player position changes
 	let doorStates = new Map();
 
 	function updateDoorStates() {
@@ -499,18 +497,15 @@
 				}
 			}
 		}
-		// Force reactivity for key collection
 		collectedKeys = collectedKeys;
 		doorStates = states;
 	}
 
-	// Update door states when player position changes
 	$: if (player.x !== undefined && player.y !== undefined) {
 		updateDoorStates();
 	}
 
 	function executeDoorLogic(door: Door): boolean {
-		// Initialize currentCode if not set
 		if (!door.currentCode) {
 			door.currentCode = {
 				condition: door.defaultCode.condition,
@@ -519,12 +514,10 @@
 			};
 		}
 
-		// Execute the door's current code logic with fixed if/else structure
 		if (!door.currentCode.ifCommands && !door.currentCode.elseCommands) {
-			return true; // Default behavior: door is open
+			return false;
 		}
 
-		// Evaluate condition
 		const doorPos = findDoorPosition(door);
 		let conditionMet = false;
 
@@ -533,14 +526,12 @@
 		} else if (door.currentCode.condition === 'never') {
 			conditionMet = false;
 		} else if (door.currentCode.condition === 'has key') {
-			// Check if player has collected any key
 			conditionMet = collectedKeys.size > 0;
 		} else if (door.currentCode.condition === 'does not have key') {
-			// Check if player has NOT collected any key
 			conditionMet = collectedKeys.size === 0;
 		}
 
-		// Execute appropriate commands based on condition
+		// execute door commands
 		const commandsToExecute = conditionMet
 			? door.currentCode.ifCommands
 			: door.currentCode.elseCommands;
@@ -570,7 +561,6 @@
 	}
 
 	function resetDoorCodes() {
-		// Reset all doors to their default code
 		for (let i = 0; i < h; i++) {
 			for (let j = 0; j < w; j++) {
 				const cell = contents[i][j];
@@ -586,7 +576,6 @@
 	}
 
 	function openDoorEditor(door: Door) {
-		// Initialize currentCode if not set
 		if (!door.currentCode) {
 			door.currentCode = {
 				condition: door.defaultCode.condition,
@@ -601,7 +590,6 @@
 	function saveDoorCode() {
 		showDoorDialog = false;
 		selectedDoor = null;
-		// Update door states after programming
 		updateDoorStates();
 	}
 
@@ -644,6 +632,7 @@
 		}
 	}
 
+	// functions that arent used anymore but keeping just in case
 	function moveCommandWithinIf(fromIndex: number, toIndex: number) {
 		if (selectedDoor && selectedDoor.currentCode) {
 			const commands = [...selectedDoor.currentCode.ifCommands];
@@ -663,13 +652,11 @@
 	}
 
 	function fullReset() {
-		// Reset everything including door codes
 		resetProgram();
 		resetDoorCodes();
 		updateDoorStates();
 	}
 
-	// Initialize door codes and states on mount
 	onMount(() => {
 		initializeDoorCodes();
 		updateDoorStates();
@@ -693,6 +680,7 @@
 	}
 </script>
 
+<!-- level layout with a bunch of silly html -->
 <div class="container" class:solved>
 	<h1 class="title">{title}</h1>
 	{#if maxBlocks !== null && maxBlocks > 0}
@@ -799,6 +787,8 @@
 			<h3>Program</h3>
 			<div
 				class="command-list"
+				role="application"
+				aria-label="programming commands list"
 				on:dragover={(e: DragEvent) => e.preventDefault()}
 				on:drop={(e: DragEvent) => {
 					const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -822,6 +812,13 @@
 					{#if typeof command === 'string'}
 						<div
 							class="command-item draggable-command"
+							role="button"
+							tabindex="0"
+							aria-label="draggable command: {command === 'forward'
+								? 'Move Forward'
+								: command === 'turnLeft'
+									? 'Turn Left'
+									: 'Turn Right'}"
 							class:dragging={draggedIndex === index}
 							class:drag-over={dragOverIndex === index}
 							class:executing={currentExecutingIndex === index && currentExecutingPath.length === 1}
@@ -868,6 +865,9 @@
 					{:else if command.type === 'loop'}
 						<div
 							class="loop-container draggable-command"
+							role="button"
+							tabindex="0"
+							aria-label="Draggable loop: Repeat {command.times} times"
 							class:dragging={draggedIndex === index}
 							class:drag-over={dragOverIndex === index}
 							class:executing={currentExecutingIndex === index && currentExecutingPath.length === 1}
@@ -895,7 +895,7 @@
 									on:click={() => removeCommand(index)}
 									disabled={isRunning || hasRun}
 									title="Remove loop"
-									aria-label="Remove loop"
+									aria-label="remove loop"
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -912,6 +912,8 @@
 							<div class="loop-commands">
 								<div
 									class="loop-drop-zone"
+									role="region"
+									aria-label="loop commands drop zone"
 									on:dragover={(e: DragEvent) => {
 										e.preventDefault();
 										e.stopPropagation();
@@ -928,6 +930,13 @@
 									{#each command.commands as loopCommand, loopIndex}
 										<div
 											class="command-item loop-command draggable-command"
+											role="button"
+											tabindex="0"
+											aria-label="draggable loop command: {loopCommand === 'forward'
+												? 'Move Forward'
+												: loopCommand === 'turnLeft'
+													? 'Turn Left'
+													: 'Turn Right'}"
 											class:executing={currentExecutingPath[0] === index &&
 												currentExecutingPath[1] === loopIndex}
 											class:forward={loopCommand === 'forward'}
@@ -1135,7 +1144,6 @@
 										try {
 											const parsedData = JSON.parse(data);
 											if (parsedData.fromBlock) {
-												// Moving from another block
 												if (parsedData.fromBlock === 'if') {
 													removeCommandFromIf(parsedData.fromIndex);
 												} else {
@@ -1143,11 +1151,9 @@
 												}
 												addCommandToIf(parsedData.command);
 											} else {
-												// New command from palette
 												addCommandToIf(data);
 											}
 										} catch {
-											// Fallback for simple string data
 											addCommandToIf(data);
 										}
 									}}
@@ -1210,7 +1216,6 @@
 										try {
 											const parsedData = JSON.parse(data);
 											if (parsedData.fromBlock) {
-												// Moving from another block
 												if (parsedData.fromBlock === 'if') {
 													removeCommandFromIf(parsedData.fromIndex);
 												} else {
@@ -1218,11 +1223,9 @@
 												}
 												addCommandToElse(parsedData.command);
 											} else {
-												// New command from palette
 												addCommandToElse(data);
 											}
 										} catch {
-											// Fallback for simple string data
 											addCommandToElse(data);
 										}
 									}}

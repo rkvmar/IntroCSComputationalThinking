@@ -1,9 +1,11 @@
 <script lang="ts">
+	//imports
 	import Grid from '$lib/components/Grid.svelte';
 	import Tf2Coconut from '$lib/components/TF2Coconut.svelte';
 	import { onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
 
+	// door interface
 	interface Door {
 		type: 'door';
 		id: string;
@@ -16,12 +18,14 @@
 		isOpen?: boolean;
 	}
 
+	// key interface
 	interface Key {
 		type: 'key';
 		id: string;
 		collected: boolean;
 	}
 
+	// level interface
 	interface Level {
 		title: string;
 		contents: (number | Door | Key)[][];
@@ -29,7 +33,7 @@
 		maxBlocks?: number;
 	}
 
-	let maxUnlockedLevel: number = 7;
+	let maxUnlockedLevel: number = 0; //set to 0 for production, but nice to set to really high number for testing
 	let completedLevels: boolean[] = [];
 	let levelElements: HTMLElement[] = [];
 	let congratulationsElement: HTMLElement;
@@ -52,11 +56,10 @@
 		if (!completedLevels[levelIndex]) {
 			completedLevels[levelIndex] = true;
 
-			// Unlock next level if it exists and isn't already unlocked
 			if (levelIndex + 1 < levels.length && levelIndex + 1 > maxUnlockedLevel) {
 				maxUnlockedLevel = levelIndex + 1;
 
-				// Scroll to next level after a short delay
+				// silly jank scroll thingy
 				setTimeout(() => {
 					const nextLevelElement = levelElements[levelIndex + 1];
 					if (nextLevelElement) {
@@ -69,11 +72,11 @@
 				}, 300);
 			}
 
-			// Check if all levels are now completed
+			// level completion check
 			setTimeout(() => {
 				if (completedLevels.every((completed) => completed)) {
 					triggerFinalConfetti();
-					// Scroll to congratulations after confetti starts
+					//more jank scroll things
 					setTimeout(() => {
 						if (congratulationsElement) {
 							congratulationsElement.scrollIntoView({
@@ -88,8 +91,8 @@
 		}
 	}
 
+	//MORE confetti
 	function triggerFinalConfetti(): void {
-		// Epic confetti for completing all levels
 		confetti({
 			particleCount: 300,
 			spread: 100,
@@ -127,6 +130,7 @@
 	}
 </script>
 
+<!-- all the html for the website -->
 <div class="game-container">
 	{#each levels as level, index}
 		{#if index <= maxUnlockedLevel}
@@ -151,7 +155,8 @@
 </div>
 <Tf2Coconut />
 
-<style>
+<!-- css works but like its mildly weird -->
+<style lang="css">
 	.game-container {
 		display: flex;
 		flex-direction: column;
@@ -178,10 +183,5 @@
 	.congratulations h1 {
 		font-size: 2.5em;
 		margin-bottom: 20px;
-	}
-
-	.congratulations p {
-		font-size: 1.2em;
-		opacity: 0.9;
 	}
 </style>
