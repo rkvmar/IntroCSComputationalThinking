@@ -17,22 +17,24 @@
 
 ### EXAMPLE
 
-```
+```json
 {
-  "title": "no way",
-  "contents": [
-    [0, 0, 0, 0, 0],
-    [0, 0, 2, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 1, 0, 0]
-  ],
+ "title": "no way",
+ "contents": [
+  [0, 0, 0, 0, 0],
+  [0, 0, 2, 0, 0],
+  [0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0]
+ ],
  "allowedCommands": ["f"]
 }
 ```
 
 Grid size will be based on the size of the 2d array
+
 WARNING: things may break if the size of the arrays in the main array are not the same
+
 KEY:
 
 ```
@@ -55,50 +57,51 @@ You can also choose what actions are allowed, current programmed actions are:
 
 There are also more complex configurable objects that can be added
 
-```
+```json
 {
-    "title": "Door™",
-    "contents": [
-      [0, 0, 0, 0, 0],
-      [0, 0, 2, 0, 0],
-      [
-        3,
-        3,
-        {
-          "type": "door",
-          "id": "keyDoor",
-          "defaultCode": {
-            "condition": "has key",
-            "ifCommands": ["open"],
-            "elseCommands": ["close"]
-          },
-          "allowedConditions": ["has key", "never"],
-          "allowedActions": ["open", "close"],
-          "conditionsEditable": false,
-          "actionsEditable": false,
-          "isOpen": false
-        },
-        3,
-        3
-      ],
-      [
-        0,
-        0,
-        0,
-        {
-          "type": "key",
-          "id": "key1",
-          "collected": false
-        },
-        0
-      ],
-      [0, 0, 1, 0, 0]
-    ],
-    "allowedCommands": ["f", "r", "l", "loop"]
-  }
+ "title": "Door™",
+ "contents": [
+  [0, 0, 0, 0, 0],
+  [0, 0, 2, 0, 0],
+  [
+   3,
+   3,
+   {
+    "type": "door",
+    "id": "keyDoor",
+    "defaultCode": {
+     "condition": "has key",
+     "ifCommands": ["open"],
+     "elseCommands": ["close"]
+    },
+    "allowedConditions": ["has key", "never"],
+    "allowedActions": ["open", "close"],
+    "conditionsEditable": false,
+    "actionsEditable": false,
+    "isOpen": false
+   },
+   3,
+   3
+  ],
+  [
+   0,
+   0,
+   0,
+   {
+    "type": "key",
+    "id": "key1",
+    "collected": false
+   },
+   0
+  ],
+  [0, 0, 1, 0, 0]
+ ],
+ "allowedCommands": ["f", "r", "l", "loop"]
+}
 ```
 
 OBJECTS:
+
 Door and Key for conditionals practice
 
 ```
