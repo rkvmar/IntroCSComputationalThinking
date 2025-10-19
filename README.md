@@ -117,4 +117,10 @@ for door:
 there isnt much you need to configure for the keys
 ```
 
+## TODO
+
+- come up with and add more types of objects
+- add saving progress through localstorage
+- procrastinate some more
+
 -# I sure hope this documentation is good enough
