@@ -2,6 +2,7 @@
 	// imports
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
+	import { showDirectionalHelp } from '$lib/stores';
 
 	// door interface from +page.svelte
 	interface Door {
@@ -681,6 +682,7 @@
 </script>
 
 <!-- level layout with a bunch of silly html -->
+
 <div class="container" class:solved>
 	<h1 class="title">{title}</h1>
 	{#if maxBlocks !== null && maxBlocks > 0}
@@ -734,11 +736,23 @@
 			style="--marker-x: {player.x}; --marker-y: {player.y}; --marker-color: #ff000055; transform: rotate({rotation}deg)"
 		>
 			<span class="direction-arrow">↑</span>
+			
 		</div>
+		<span
+			class="directional-left"
+			style="--marker-x: {player.x}; --marker-y: {player.y}"
+			class:hidden={!$showDirectionalHelp}
+		></span>
+		<span
+			class="directional-right"
+			style="--marker-x: {player.x}; --marker-y: {player.y}"
+			class:hidden={!$showDirectionalHelp}
+		></span>
 		<div
 			class="marker"
 			style="--marker-x: {goal.x}; --marker-y: {goal.y}; --marker-color: #7e80ea55"
 		></div>
+		
 	</div>
 
 	<div class="programming-interface">
@@ -1443,6 +1457,45 @@
 		border-color: #4caf50;
 		box-shadow: inset 0 0 15px rgba(76, 175, 80, 0.6);
 	}
+
+	.directional-left {
+		position: absolute;
+		left: calc(var(--marker-x) * (var(--squareSize, 70px) + 1px) - 20px); 
+		top: calc(var(--marker-y) * (var(--squareSize, 70px) + 1px) + (var(--squareSize, 70px) / 2) - 4.5px);
+		width: 9px;
+		height: 9px;
+		background-color: #2196f3;
+		border: 1px solid #ccc;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		pointer-events: none;
+		transition:
+			left 0.3s ease,
+			top 0.3s ease,
+			transform 0.3s ease;
+	}
+
+	.directional-right {
+		position: absolute;
+		left: calc(var(--marker-x) * (var(--squareSize, 70px) + 1px) + (var(--squareSize, 70px)) + 10px); 
+		top: calc(var(--marker-y) * (var(--squareSize, 70px) + 1px) + (var(--squareSize, 70px) / 2) - 4.5px);
+		width: 9px;
+		height: 9px;
+		background-color: #ff9800;
+		border: 1px solid #ccc;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		pointer-events: none;
+		transition:
+			left 0.3s ease,
+			top 0.3s ease,
+			transform 0.3s ease;
+	}
+
 	.marker {
 		position: absolute;
 		left: calc(var(--marker-x) * (var(--squareSize, 70px) + 1px));
@@ -1467,6 +1520,11 @@
 		font-size: 24px;
 		font-weight: bold;
 		text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+	}
+
+	/* helper utility used by class:hidden directive in markup */
+	.hidden {
+		display: none !important;
 	}
 
 	.programming-interface {

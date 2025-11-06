@@ -120,7 +120,23 @@ there isnt much you need to configure for the keys
 ## TODO
 
 - come up with and add more types of objects
-- add saving progress through localstorage
+    - did not have time to code these but here are some ideas: 
+        - touch X number of squares
+        - move two forward but one back
+        - in game level editor that allows students to create levels for eachother, and maybe helps them learn JSON
+ 
 - procrastinate some more
 
--# I sure hope this documentation is good enough
+## CLIENT
+
+Matt Hesby 
+Needs a way for his students in INTRO CS to learn computational thinking. He wants to be able to create custom puzzles for his students. 
+
+This currently solves the problem but the process of level creation is quite internal. A good next feature might be adding a way to create levels from user interface instead of a JSON. 
+
+
+## BUGS
+- when the user does Hack The Door and puts if 'never' then 'open' but nothing in the else feild, the door doesn't open
+- congratulations does not show when all levels are done
+
+# I sure hope this documentation is good enough
