@@ -1,6 +1,7 @@
 <script lang="ts">
 	//imports
 	import Grid from '$lib/components/Grid.svelte';
+	import Header from '$lib/components/Header.svelte';
 	import Tf2Coconut from '$lib/components/TF2Coconut.svelte';
 	import { onMount } from 'svelte';
 	import { confetti } from '@tsparticles/confetti';
@@ -33,24 +34,66 @@
 		maxBlocks?: number;
 	}
 
+	function getMaxFromLocalStorage(): number {
+		if (typeof window === 'undefined') return 0;
+		const v = window.localStorage.getItem('maxUnlockedLevel');
+		if (v !== null) {
+			maxUnlockedLevel = Number(v);
+			return maxUnlockedLevel;
+		}
+		maxUnlockedLevel = 0;
+		return 0;
+	}
+	
 	let maxUnlockedLevel: number = 0; //set to 0 for production, but nice to set to really high number for testing
 	let completedLevels: boolean[] = [];
+	let loadError: string | null = null;
 	let levelElements: HTMLElement[] = [];
 	let congratulationsElement: HTMLElement;
 	let levels: Level[] = [];
 
-	onMount(async (): Promise<void> => {
-		// Load levels from JSON file
-		try {
-			const response = await fetch('/levels.json');
-			levels = await response.json();
-			completedLevels = new Array(levels.length).fill(false);
-		} catch (error) {
-			console.error('Error loading levels:', error);
-			levels = [];
-			completedLevels = [];
-		}
-	});
+async function loadLevels(): Promise<void> {
+    // initialize maxUnlockedLevel from localStorage (if present)
+    getMaxFromLocalStorage();
+
+    // Load levels from JSON file
+    try {
+        loadError = null;
+        const response = await fetch('/levels.json');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        levels = await response.json();
+        completedLevels = new Array(levels.length).fill(false);
+    } catch (error) {
+        console.error('Error loading levels:', error);
+        levels = [];
+        completedLevels = [];
+        loadError =  'Unknown error loading levels.json';
+    }
+
+    // If user has progressed past the first level, auto-scroll to bottom
+    if (typeof window !== 'undefined') {
+        const stored = Number(window.localStorage.getItem('maxUnlockedLevel') || '0');
+        if (stored > 1) {
+            setTimeout(() => {
+                try {
+                    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                } catch (e) {
+                    // fallback
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
+            }, 120);
+        }
+    }
+}
+
+onMount(async (): Promise<void> => {
+    await loadLevels();
+});
+
+function retryLoad() {
+    // simple retry that re-invokes loadLevels
+    loadLevels();
+}
 
 	function handleLevelComplete(levelIndex: number): void {
 		if (!completedLevels[levelIndex]) {
@@ -58,7 +101,8 @@
 
 			if (levelIndex + 1 < levels.length && levelIndex + 1 > maxUnlockedLevel) {
 				maxUnlockedLevel = levelIndex + 1;
-
+				window.localStorage.setItem('maxUnlockedLevel', String(maxUnlockedLevel));
+				console.log(localStorage.getItem('maxUnlockedLevel'))
 				// silly jank scroll thingy
 				setTimeout(() => {
 					const nextLevelElement = levelElements[levelIndex + 1];
@@ -131,7 +175,15 @@
 </script>
 
 <!-- all the html for the website -->
+ <Header/>
 <div class="game-container">
+	{#if loadError}
+		<div class="error-popup">
+			<p>{loadError}</p>
+			<button on:click={retryLoad}>Retry</button>
+		</div>
+	{/if}
+
 	{#each levels as level, index}
 		{#if index <= maxUnlockedLevel}
 			<div class="level-wrapper" bind:this={levelElements[index]}>
@@ -147,9 +199,9 @@
 		{/if}
 	{/each}
 
-	{#if completedLevels.every((completed) => completed)}
+	{#if levels.length > 0 && completedLevels.length === levels.length && completedLevels.every((completed) => completed)}
 		<div class="congratulations" bind:this={congratulationsElement}>
-			<h1>Congradulatis!</h1>
+			<h1>done!</h1>
 		</div>
 	{/if}
 </div>
@@ -184,4 +236,48 @@
 		font-size: 2.5em;
 		margin-bottom: 20px;
 	}
+		.error-popup {
+		position: fixed;
+		top: 20px;
+		left: 50%;
+		transform: translateX(-50%);
+		background-color: #ffdddd;
+		color: #a30000;
+		border: 2px solid #ff5c5c;
+		padding: 16px 24px;
+		border-radius: 12px;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+		z-index: 1000;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		font-weight: 500;
+		animation: fadeIn 0.3s ease-in-out;
+	}
+
+	.error-popup button {
+		background-color: #a30000;
+		color: white;
+		border: none;
+		padding: 8px 14px;
+		border-radius: 8px;
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+
+	.error-popup button:hover {
+		background-color: #c60000;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: translate(-50%, -10px);
+		}
+		to {
+			opacity: 1;
+			transform: translate(-50%, 0);
+		}
+	}
+
 </style>
